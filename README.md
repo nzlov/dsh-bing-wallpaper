@@ -16,7 +16,11 @@ Daily Bing wallpapers, image-derived theme colours, and automatic light/dark app
 
 ## Installation
 
-Requires DSH `>=0.2.2-rc.4 <0.3.0`, Git, Node.js, and npm.
+Requires DSH `>=0.2.2-rc.4 <0.3.0`.
+
+In DSH’s plugin manager, install **`@nzlov/dsh-bing-wallpaper`**, or ask the DSH agent to install that npm bundle. The npm package is prebuilt; no manual build is needed. Installation affects all sessions in the current profile.
+
+To install from source (requires Git, Node.js, and npm):
 
 ```sh
 git clone https://github.com/nzlov/dsh-bing-wallpaper.git
@@ -25,7 +29,7 @@ npm ci --ignore-scripts
 npm run build
 ```
 
-In DSH’s plugin manager, install this directory using its absolute path, or ask the DSH agent to install it as a local bundle. Installation affects all sessions in the current profile.
+Then install this directory in DSH using its absolute path.
 
 Open **Settings → Bing daily wallpaper**. Rebuild after changing source files; follow Plugin Manager’s restart instructions when updating an installed bundle.
 

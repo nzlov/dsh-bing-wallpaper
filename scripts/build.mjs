@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 const root = new URL('../', import.meta.url);
 const read = path => readFile(new URL(path, root), 'utf8');
+const { name } = JSON.parse(await read('package.json'));
 const dictionaries = {};
 for (const lang of ['en', 'zh']) {
   const { meta, ...ui } = JSON.parse(await read(`locale/${lang}.json`));
@@ -14,7 +15,7 @@ await build({
 import { createPlugin } from './client-main.js';
 import { createAppearanceController } from './appearance.js';
 window.__ModuleLoader__.load({
-  id: '@local/dsh-bing-daily-theme',
+  id: ${JSON.stringify(name)},
   factory(require) {
     return createPlugin(require('react'), core, ${JSON.stringify(dictionaries)}, createAppearanceController);
   },

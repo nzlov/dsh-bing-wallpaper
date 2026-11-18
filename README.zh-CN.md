@@ -16,7 +16,11 @@
 
 ## 安装
 
-需要 DSH `>=0.2.2-rc.4 <0.3.0`、Git、Node.js 和 npm。
+需要 DSH `>=0.2.2-rc.4 <0.3.0`。
+
+在 DSH 插件管理中安装 **`@nzlov/dsh-bing-wallpaper`**，或让 DSH Agent 安装该 npm bundle。npm 包已预构建，无需手动构建。安装会影响当前 profile 的所有会话。
+
+如需从源码安装（需要 Git、Node.js 和 npm）：
 
 ```sh
 git clone https://github.com/nzlov/dsh-bing-wallpaper.git
@@ -25,7 +29,7 @@ npm ci --ignore-scripts
 npm run build
 ```
 
-在 DSH 插件管理中使用本目录的绝对路径安装，或让 DSH Agent 将其作为本地 bundle 安装。安装会影响当前 profile 的所有会话。
+随后在 DSH 中使用本目录的绝对路径安装。
 
 启用后打开 **设置 → Bing 每日壁纸**。修改源码后需重新构建；更新已安装的插件时，按插件管理器提示决定是否重启。
 

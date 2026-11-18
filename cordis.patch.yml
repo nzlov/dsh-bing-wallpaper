@@ -1,4 +1,4 @@
 - insert:
     - id: bing-daily-theme
-      name: '@local/dsh-bing-daily-theme'
+      name: '@nzlov/dsh-bing-wallpaper'
       config: {}

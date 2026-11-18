@@ -1,7 +1,6 @@
 {
-  "name": "@local/dsh-bing-daily-theme",
+  "name": "@nzlov/dsh-bing-wallpaper",
   "version": "1.4.0",
-  "private": true,
   "type": "module",
   "description": "Daily Bing wallpaper, image-derived theme colours and automatic day/night appearance for DSH Web.",
   "author": "nzlov",
@@ -9,6 +8,10 @@
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/nzlov/dsh-bing-wallpaper.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "engines": {
     "dsh": ">=0.2.2-rc.4 <0.3.0"
@@ -35,6 +38,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
     "test": "node --test test/*.test.js",
     "check": "node --check index.js && node --check bing-source.js && node --check palette.js && node --check client-main.js && node --check appearance.js && node --check boot-theme.js && node --check compatibility.js && node --check palette-preview.js && node --check client.js"
   },

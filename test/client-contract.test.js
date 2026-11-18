@@ -51,7 +51,24 @@ test('prebuilt artifact ships ten modes without removed help copy', async () => 
   for (const path of ['THIRD_PARTY_NOTICES.md','third-party/material-color-utilities-LICENSE.txt']) assert.ok((await stat(new URL(`../${path}`, import.meta.url))).isFile());
   assert.match(await read('third-party/material-color-utilities-LICENSE.txt'), /Apache License/);
 });
-
+test('public npm bundle uses one package identity and ships its runtime exports', async () => {
+  const manifest = JSON.parse(await read('package.json'));
+  const client = await read('client.js');
+  const { runInNewContext } = await import('node:vm');
+  let registration;
+  runInNewContext(client, { window: { __ModuleLoader__: { load(value) { registration = value; } } } }, { timeout: 1000 });
+  assert.equal(manifest.name, '@nzlov/dsh-bing-wallpaper');
+  assert.equal(manifest.author, 'nzlov');
+  assert.notEqual(manifest.private, true);
+  assert.deepEqual(manifest.publishConfig, { access: 'public', registry: 'https://registry.npmjs.org/' });
+  assert.equal(manifest.scripts.prepack, 'npm run build');
+  assert.equal(registration.id, manifest.name);
+  assert.equal(typeof registration.factory, 'function');
+  assert.ok((await read('cordis.patch.yml')).includes(`name: '${manifest.name}'`));
+  assert.ok((await read('client-main.js')).includes(`SOURCE = '${manifest.name}'`));
+  for (const key of ['.', './client', './icon']) assert.ok((await stat(new URL(`../${manifest.exports[key]}`, import.meta.url))).isFile(), key);
+  assert.doesNotMatch(client, /@local\/dsh-bing-daily-theme/);
+});
 
 test('photo overlay keeps metadata and one accessible top-right refresh action', async () => {
   const source = await read('client-main.js');

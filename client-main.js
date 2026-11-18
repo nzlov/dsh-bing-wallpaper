@@ -3,7 +3,7 @@ import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from '.
 import { MARKETPLACE_THEME_CSS } from './compatibility.js';
 import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './palette-preview.js';
 export function createPlugin(React, core, dictionaries, createAppearanceController) {
-  const h = React.createElement, NS = 'bing-daily-theme', SOURCE = '@local/dsh-bing-daily-theme';
+  const h = React.createElement, NS = 'bing-daily-theme', SOURCE = '@nzlov/dsh-bing-wallpaper';
   const KEY = PREFERENCES_KEY;
   return {
     inject: ['slots', 'theme', 'locale'],
