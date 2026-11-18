@@ -1,0 +1,44 @@
+# DSH Bing 每日壁纸
+
+简体中文 · [English](README.md)
+
+为 DSH Web 添加每日 Bing 壁纸、从图片提取的主题色，以及自动日夜外观。独立插件，不修改 DSH 本体。
+
+## 特性
+
+- 国内（中国）与国际（美国）Bing 来源，缓存独立，失败时不自动混用其他来源。
+- 十种取色风格：M3 Content、M3 Tonal Spot、M3 Fruit Salad、M3 Rainbow、M3 Monochrome、Vibrant、Faithful、Soft、Dysfunctional、Muted。
+- 平铺配色卡片，日夜预览以斜线分隔，点击即可切换。
+- 壁纸可见度 10%–100%，保留阅读蒙层；照片、图标及语义状态色不重新染色。
+- 支持定时、跟随系统、跟随 DSH，以及固定浅色或深色。默认按浏览器本地时间在 07:00–19:00 使用浅色。
+- 标题、日期、来源与版权叠放在图片底部，右上角提供刷新图标。
+- 自动检查更新，失败保留上一张图片；界面支持中英文。
+
+## 安装
+
+需要 DSH `>=0.2.2-rc.4 <0.3.0`、Git、Node.js 和 npm。
+
+```sh
+git clone https://github.com/nzlov/dsh-bing-wallpaper.git
+cd dsh-bing-wallpaper
+npm ci --ignore-scripts
+npm run build
+```
+
+在 DSH 插件管理中使用本目录的绝对路径安装，或让 DSH Agent 将其作为本地 bundle 安装。安装会影响当前 profile 的所有会话。
+
+启用后打开 **设置 → Bing 每日壁纸**。修改源码后需重新构建；更新已安装的插件时，按插件管理器提示决定是否重启。
+
+## 使用须知
+
+- 无需 API Key 或 CDN。上游仅访问固定 Bing HTTPS 接口，不向 Bing 发送聊天内容或浏览器凭据。
+- 图片仅缓存在内存，不提供离线壁纸库。服务端按小时缓存，因此点击刷新不一定下载新图；两个地区也可能展示同一张照片。
+- 插件控制项保存在当前浏览器，DSH 的外观偏好则由整个 profile 共享。建议仅在一个主要浏览器启用定时切换，避免不同时间表互相覆盖。
+
+## 许可与版权
+
+作者：[nzlov](https://github.com/nzlov)。
+
+- 插件代码及原创 SVG 图标采用 [MIT 许可](LICENSE)。
+- Material Color Utilities 采用 Apache-2.0，详见[第三方声明](THIRD_PARTY_NOTICES.md)及[附带许可](third-party/material-color-utilities-LICENSE.txt)。
+- 图片版权归 Bing 及原摄影作者所有。插件许可不包含图片的再分发或商业使用授权，请遵守每张图片所附版权链接中的条款。

@@ -1,0 +1,60 @@
+{
+  "name": "@local/dsh-bing-daily-theme",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily Bing wallpaper, image-derived theme colours and automatic day/night appearance for DSH Web.",
+  "author": "nzlov",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/nzlov/dsh-bing-wallpaper.git"
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.4 <0.3.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "bing-source.js",
+    "boot-theme.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md",
+    "README.zh-CN.md",
+    "icon.svg",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "third-party"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.js",
+    "check": "node --check index.js && node --check bing-source.js && node --check palette.js && node --check client-main.js && node --check appearance.js && node --check boot-theme.js && node --check compatibility.js && node --check palette-preview.js && node --check client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@material/material-color-utilities": "0.3.0",
+    "esbuild": "0.28.2"
+  }
+}

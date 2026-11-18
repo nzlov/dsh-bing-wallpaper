@@ -1,0 +1,80 @@
+// Dependency-free bridge for the interval before Client plugins can run.
+export const PREFERENCES_KEY = 'dsh.bing-daily-theme.preferences.v1';
+export const BOOT_CACHE_KEY = 'dsh.bing-daily-theme.boot.v1';
+export const BOOT_STYLE_ID = 'bdt-boot-theme';
+
+export function makeBootCache(settings, tokens, imageUrl) {
+  if (!settings.enabled || !settings.dynamic) return null;
+  const keys = {
+    background: '--dsw-alias-bg-layer-1', primary: '--dsw-alias-label-primary',
+    secondary: '--dsw-alias-label-secondary', tertiary: '--dsw-alias-label-tertiary',
+    border: '--dsw-alias-border-l2', brand: '--dsw-alias-brand-primary',
+  };
+  const colors = {};
+  for (const scheme of ['light', 'dark']) {
+    colors[scheme] = Object.fromEntries(Object.entries(keys).map(([role, key]) => [role, tokens[key][scheme]]));
+  }
+  return { version: 1, market: settings.market || 'zh-CN', paletteMode: settings.paletteMode, strength: settings.strength, colors, imageUrl };
+}
+
+// This pure function is also embedded verbatim in the Host's early script.
+// All persisted values are untrusted: no arbitrary CSS or URL interpolation.
+export function bootThemeCSS(settings, cache, now, systemDark, followDark) {
+  settings ??= { enabled: true, dynamic: true, paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28 };
+  if (!settings || settings.enabled !== true || settings.dynamic !== true || !cache || cache.version !== 1
+      || cache.paletteMode !== settings.paletteMode || cache.strength !== settings.strength
+      || !['zh-CN', 'en-US'].includes(settings.market ?? 'zh-CN') || (cache.market ?? 'zh-CN') !== (settings.market ?? 'zh-CN')
+      || !Number.isFinite(settings.strength) || settings.strength < 10 || settings.strength > 100) return '';
+  // Follow stays selector-driven: structured row activation order may change
+  // after a Host plugin reload, and the native body selector is authoritative.
+  if (settings.mode === 'follow' && typeof followDark !== 'boolean') {
+    return bootThemeCSS(settings, cache, now, systemDark, false).replaceAll('[data-dsh-boot]', 'body:not([data-ds-dark-theme]) [data-dsh-boot]')
+      + bootThemeCSS(settings, cache, now, systemDark, true).replaceAll('[data-dsh-boot]', 'body[data-ds-dark-theme] [data-dsh-boot]');
+  }
+  let dark;
+  if (settings.mode === 'schedule') {
+    const time = value => typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+    if (!time(settings.day) || !time(settings.night) || settings.day === settings.night) return '';
+    const minutes = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+    const start = minutes(settings.day), end = minutes(settings.night);
+    const current = now.getHours() * 60 + now.getMinutes();
+    dark = !(start < end ? current >= start && current < end : current >= start || current < end);
+  } else if (settings.mode === 'system') dark = systemDark;
+  else if (settings.mode === 'follow') dark = followDark;
+  else if (settings.mode === 'light' || settings.mode === 'dark') dark = settings.mode === 'dark';
+  else return '';
+  const colors = cache.colors?.[dark ? 'dark' : 'light'];
+  const roles = ['background', 'primary', 'secondary', 'tertiary', 'border', 'brand'];
+  if (!colors || !roles.every(role => {
+    if (typeof colors[role] !== 'string') return false;
+    const match = /^rgb\((\d{1,3}), (\d{1,3}), (\d{1,3})\)$/.exec(colors[role]);
+    return match && match.slice(1).every(channel => Number(channel) <= 255);
+  })) return '';
+  // The opaque backing also works when the in-memory image cache is empty.
+  // Never store blob URLs or request an arbitrary cached URL at startup.
+  const url = cache.imageUrl;
+  const alpha = Math.sqrt(1 - settings.strength / 100);
+  const matte = colors.background.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  const imageMatch = typeof url === 'string' && url.length <= 300
+    && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);
+  const image = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US')
+    ? `linear-gradient(${matte},${matte}),linear-gradient(${dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)'},${dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)'}),url("${url}")` : 'none';
+  return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:${image}!important;background-size:cover;background-position:center;color-scheme:${dark ? 'dark' : 'light'}}`;
+}
+
+// No network await, timer, observer, global preference or body-style writes.
+function startBootTheme(preferencesKey, cacheKey, styleId, resolveCSS) {
+  try {
+    const css = resolveCSS(JSON.parse(localStorage.getItem(preferencesKey)), JSON.parse(localStorage.getItem(cacheKey)),
+      new Date(), typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches);
+    if (!css) return;
+    document.getElementById(styleId)?.remove();
+    const style = document.createElement('style');
+    style.id = styleId; style.textContent = css; document.head.append(style);
+  } catch { /* Storage denial or damaged cache must never block shell startup. */ }
+}
+
+export function bootThemeInjection() {
+  const text = `;(${startBootTheme.toString()})(${JSON.stringify(PREFERENCES_KEY)},${JSON.stringify(BOOT_CACHE_KEY)},${JSON.stringify(BOOT_STYLE_ID)},${bootThemeCSS.toString()});`;
+  return { kind: 'script', placement: 'body', text };
+}
