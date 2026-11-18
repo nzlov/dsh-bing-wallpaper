@@ -4,6 +4,8 @@
 
 Daily Bing wallpapers, image-derived theme colours, and automatic light/dark appearance for DSH Web. A standalone plugin with no changes to DSH itself.
 
+![Bing daily wallpaper settings in DSH Web, showing the wallpaper preview, source selection, and image-derived colour styles (Chinese UI)](<assets/settings-preview.png>)
+
 ## Features
 
 - China and international (US) Bing sources, with separate caches and no automatic cross-source fallback.
