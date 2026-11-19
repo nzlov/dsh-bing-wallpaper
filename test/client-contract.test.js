@@ -28,30 +28,28 @@ test('simplified controls retain labels and values without dangling help referen
   assert.match(source, /'aria-valuetext': `\$\{prefs\.strength\}%`/);
   assert.match(source, /h\('label', \{ htmlFor:/);
   assert.match(source, /role: 'status', 'aria-live': 'polite'/);
-  assert.doesNotMatch(source, /bdt-(?:palette|strength)-help|aria-describedby|paletteHint|highVisibility|visibilityHint|t\('intro'\)|t\('note'\)|'original'/);
+  assert.doesNotMatch(source, /bdt-(?:palette|strength)-help|paletteHint|highVisibility|visibilityHint|t\('intro'\)|t\('note'\)|'original'/);
   assert.doesNotMatch(source, /require\(['"]@deepseek-ai\//);
 });
 test('wallpaper consumes the shared readability scrim and dynamic-off releases every colour override', async () => {
   const source = await read('client-main.js');
   assert.match(source, /const shade = core\.wallpaperShade\(s\.scheme\)/);
-  assert.match(source, /linear-gradient\(\$\{shade\},\$\{shade\}\)/);
+  assert.match(source, /wallpaperFilters\.css\(\{ selector: 'html', image, overlays: \[shade\]/);
   assert.match(source, /if \(!settings\.dynamic\) for \(const key of Object\.keys\(tokens\)\) if \(key !== '--dsw-alias-bg-base'\) delete tokens\[key\]/);
   assert.match(source, /if \(!settings\.enabled \|\| !state\.url\) \{ tokenDisposer\?\.\(\)/);
 });
-test('fullscreen right sidebar keeps its opaque fallback and tints only with dynamic colours', async () => {
-  const { fullscreenRightbarCSS } = await import('../compatibility.js');
-  const selector = '[data-sidebar-right-panel="fullscreen"] :is([data-dockkit-host="dock"] > [data-dockkit-pane], [data-dockkit-empty])';
-  const opaque = `${selector}{background-color:var(--dsw-alias-bg-layer-1)}`;
-  assert.equal(fullscreenRightbarCSS(false), opaque);
-  assert.equal(fullscreenRightbarCSS(true), `${opaque}@supports (background-color:color-mix(in srgb, black, white)){${selector}{background-color:color-mix(in srgb, var(--dsw-alias-bg-layer-1), var(--dsw-alias-brand-primary, var(--dsw-alias-bg-layer-1)) 14%)}}`);
+test('wallpaper applies browser-local sidebar backgrounds only while enabled with a decoded photo', async () => {
   const source = await read('client-main.js');
   const wallpaper = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
-  assert.match(wallpaper, /if \(!s\.settings\.enabled \|\| !s\.url\) return null;[\s\S]+\$\{fullscreenRightbarCSS\(s\.settings\.dynamic\)\}/);
+  assert.match(wallpaper, /if \(!s\.settings\.enabled \|\| !s\.url\) return null;[\s\S]+sidebarBackgroundCSS\(\{ settings: s\.settings, image, overlays: \[shade\], matte, base \}\)/);
+  assert.match(wallpaper, /sidebarColors\(colors, s\.scheme\)/);
+  assert.match(wallpaper, /alignWallpaper\(\{\s+document, window, surfaces: SIDEBAR_SURFACES/);
+  assert.match(wallpaper, /mountBackground: surface => mountSidebarBackground\(document, surface\)/);
   const bundle = await read('client.js');
-  assert.ok(bundle.includes(selector) && bundle.includes(') 14%)'), 'prebuilt client includes the scoped tint');
+  assert.ok(bundle.includes('leftSidebar') && bundle.includes('rightSidebar') && bundle.includes('data-dockkit-strip'), 'prebuilt client includes sidebar controls and chrome styling');
 });
 
-test('tinted fullscreen right sidebar separates guide cards from the background and preserves contrast', () => {
+test('palette sidebar colour preserves text and control contrast in both schemes', () => {
   const rgb = value => {
     assert.match(value, /^rgb\(\d+, \d+, \d+\)$/);
     return value.match(/\d+/g).map(Number);
@@ -62,9 +60,7 @@ test('tinted fullscreen right sidebar separates guide cards from the background 
     const tokens = makeTokens(accent, 100, mode);
     for (const scheme of ['light', 'dark']) {
       const color = key => rgb(tokens[key][scheme]);
-      const base = color('--dsw-alias-bg-layer-1'), brand = color('--dsw-alias-brand-primary');
-      const surface = base.map((channel, i) => Math.round(channel * .86 + brand[i] * .14));
-      assert.ok(surface.some((channel, i) => Math.abs(channel - base[i]) >= 10), `${mode}/${scheme}: distinct from guide cards`);
+      const surface = color('--dsw-specific-sidebar-fill');
       for (const role of ['label-primary', 'label-secondary', 'label-tertiary', 'brand-primary']) {
         assert.ok(contrast(color(`--dsw-alias-${role}`), surface) >= 4.5, `${mode}/${scheme}/${role}`);
       }

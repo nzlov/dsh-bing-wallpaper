@@ -1,7 +1,9 @@
 // A decorative DSH layout thumbnail, not a second working interface. All colors
 // use the actual sidebar/chat/composer roles, scoped to private preview variables.
+import { SIDEBAR_COLOR_ROLE } from './sidebar-background.js';
+
 const PREVIEW_ROLES = Object.freeze({
-  canvas: '--dsw-specific-sidebar-fill',
+  canvas: SIDEBAR_COLOR_ROLE,
   surface: '--dsw-alias-bg-layer-1',
   raised: '--dsw-alias-bg-layer-2',
   selected: '--dsw-specific-sidebar-nav-item-active',

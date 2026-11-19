@@ -61,9 +61,8 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark, rende
     && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);
   const photo = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US') ? `url("${url}")` : '';
   const shade = dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)';
-  const image = photo ? `linear-gradient(${matte},${matte}),linear-gradient(${shade},${shade}),${photo}` : 'none';
-  const filter = renderFilter({ selector: '[data-dsh-boot]', image: photo, overlays: [matte, shade], settings });
-  return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:${image}!important;background-size:cover;background-position:center;color-scheme:${dark ? 'dark' : 'light'}}${filter}`;
+  const filter = renderFilter({ selector: '[data-dsh-boot]', image: photo, overlays: [matte, shade], settings, fixed: true });
+  return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:none!important;isolation:isolate;color-scheme:${dark ? 'dark' : 'light'}}${filter}`;
 }
 
 // No network await, timer, observer, global preference or body-style writes.

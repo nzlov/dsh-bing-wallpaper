@@ -4,6 +4,7 @@ import { Script, runInNewContext } from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { BOOT_CACHE_KEY, BOOT_STYLE_ID, PREFERENCES_KEY, makeBootCache, bootThemeCSS, bootThemeInjection } from '../boot-theme.js';
 import { MARKETPLACE_THEME_CSS } from '../compatibility.js';
+import { wallpaperFilters } from '../wallpaper-filter.js';
 import { DEFAULTS, PALETTE_MODES, makeTokens, contrast, backgroundAlpha, WALLPAPER_VEIL } from '../palette.js';
 
 const BOOT_SCRIPT = bootThemeInjection().text;
@@ -88,9 +89,27 @@ test('wallpaper startup uses the same 10–100% curve and independent light/dark
     assert.ok(output.includes(mode === 'light' ? `rgba(255, 255, 255, ${WALLPAPER_VEIL.light})` : `rgba(0, 0, 0, ${WALLPAPER_VEIL.dark})`));
     assert.ok(output.includes(`url("${imageUrl}")`));
     assert.match(output, /background-color:rgb\(/); // A failed image remains legible.
-    assert.doesNotMatch(output, /--dsh-boot-arc|animation|mask|(?:^|[;{])(?:position|display|opacity):/);
+    assert.doesNotMatch(output, /--dsh-boot-arc|animation|mask|(?:^|[;{])(?:display|opacity):/);
+    const container = output.slice(0, output.indexOf('}') + 1);
+    assert.doesNotMatch(container, /position:/, 'startup keeps the host container layout');
   }
   for (const strength of [-1, 101, NaN, Infinity, '28']) assert.equal(css({ ...settings, strength }), '');
+});
+
+test('every startup filter mode paints only a solid fallback beneath its fixed image and reading veil', () => {
+  for (const filterMode of wallpaperFilters.modes) {
+    const prefs = { ...settings, filterMode }, output = css(prefs);
+    const container = output.slice(0, output.indexOf('}') + 1);
+    assert.match(container, /background-color:rgb\([^;]+\)!important;background-image:none!important;isolation:isolate/);
+    assert.doesNotMatch(container, /url\(|position:/);
+    const picture = output.match(/\[data-dsh-boot\]::before\{([^}]+)\}/)?.[1];
+    const veil = output.match(/\[data-dsh-boot\]::after\{([^}]+)\}/)?.[1];
+    assert.ok(picture.includes(`url("${imageUrl}")`));
+    assert.ok(picture.includes('position:fixed'));
+    assert.ok(picture.includes(`filter:${wallpaperFilters.effect(prefs)?.filter || 'none'}`));
+    assert.ok(veil.includes('background-image:linear-gradient('));
+    assert.doesNotMatch(veil, /url\(|filter:/);
+  }
 });
 
 test('untrusted colors cannot inject CSS, URLs or script text', () => {

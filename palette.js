@@ -4,11 +4,19 @@ import {
   SchemeFidelity, SchemeNeutral, SchemeExpressive, TonalPalette,
 } from '@material/material-color-utilities';
 import { wallpaperFilters } from './wallpaper-filter.js';
+import { normalizeSidebar } from './sidebar-background.js';
 
 // Pure image-colour and scheduling logic; shared by browser bundle and tests.
 export const PALETTE_MODES = Object.freeze(['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']);
 const { filterMode, filterAmounts } = wallpaperFilters.normalize();
-export const DEFAULTS = Object.freeze({ enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28, filterMode, filterAmounts: Object.freeze(filterAmounts) });
+const sidebarDefaults = () => {
+  const sidebar = normalizeSidebar();
+  return Object.freeze({ ...sidebar, filterAmounts: Object.freeze(sidebar.filterAmounts) });
+};
+export const DEFAULTS = Object.freeze({
+  enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28,
+  filterMode, filterAmounts: Object.freeze(filterAmounts), leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
+});
 export function normalizeStrength(value) {
   return Number.isFinite(value) ? Math.round(Math.min(100, Math.max(10, value))) : DEFAULTS.strength;
 }
@@ -34,6 +42,8 @@ export function normalizeSettings(input = {}) {
     night: time(input.night) ? input.night : DEFAULTS.night,
     strength: normalizeStrength(input.strength),
     ...wallpaperFilters.normalize(input),
+    leftSidebar: normalizeSidebar(input.leftSidebar),
+    rightSidebar: normalizeSidebar(input.rightSidebar),
   };
 }
 export function scheduledScheme(date, day, night) {

@@ -228,12 +228,12 @@ test('source defaults migrate to China and only the two fixed markets are accept
 test('all palette choices normalize without changing independent theme settings', () => {
   const filter = { filterMode: 'blue', filterAmounts: { ...DEFAULTS.filterAmounts, blue: 42 } };
   for (const paletteMode of MODES) {
-    const input = { enabled: false, dynamic: false, market: 'en-US', paletteMode, mode: 'dark', day: '05:30', night: '21:45', strength: 75, ...filter };
+    const input = { ...DEFAULTS, enabled: false, dynamic: false, market: 'en-US', paletteMode, mode: 'dark', day: '05:30', night: '21:45', strength: 75, ...filter };
     assert.deepEqual(normalizeSettings(input), input);
     assert.deepEqual(normalizeSettings(normalizeSettings(input)), input);
   }
   for (const paletteMode of ['original', '', 'CONTENT', 'tonalSpot', 'unknown', null, undefined, 0, {}, []]) {
-    const input = { paletteMode, strength: 99, mode: 'dark', day: '05:30', night: '21:45', enabled: false, dynamic: false, ...filter };
+    const input = { ...DEFAULTS, paletteMode, strength: 99, mode: 'dark', day: '05:30', night: '21:45', enabled: false, dynamic: false, ...filter };
     assert.deepEqual(normalizeSettings(input), { ...input, market: 'zh-CN', paletteMode: 'content' }, 'only the unsupported palette preference changes');
   }
   for (const mode of ['follow', 'schedule', 'system', 'light', 'dark']) assert.equal(normalizeSettings({ mode }).mode, mode);
@@ -245,7 +245,7 @@ test('legacy original, unknown and missing palettes migrate to content without r
       const legacy = { enabled: false, dynamic: false, mode, day: '06:15', night: '22:30', strength, ...palette };
       const before = { ...legacy };
       const normalized = normalizeSettings(legacy);
-      assert.deepEqual(normalized, { ...legacy, market: 'zh-CN', paletteMode: 'content', filterMode: DEFAULTS.filterMode, filterAmounts: DEFAULTS.filterAmounts });
+      assert.deepEqual(normalized, { ...DEFAULTS, ...legacy, market: 'zh-CN', paletteMode: 'content' });
       assert.deepEqual(normalizeSettings(normalized), normalized, 'migration is idempotent');
       assert.deepEqual(legacy, before, 'migration must not mutate stored preferences');
     }

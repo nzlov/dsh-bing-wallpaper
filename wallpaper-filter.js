@@ -40,13 +40,14 @@ export function createWallpaperFilters() {
   // The caller owns the selector, validated image CSS and readability overlays.
   // Put the filter on the image layer alone; paint the scrim above it, not
   // inside the filter, so its existing contrast bounds still apply.
-  function css({ selector, image, overlays, settings, fixed = false }) {
-    const look = effect(settings);
-    if (!image || !look) return '';
+  function css({ selector, image, overlays, settings, fixed = false, aligned = false }) {
+    if (!image) return '';
+    const look = effect(settings) || {};
     const position = fixed ? 'fixed' : 'absolute';
     const layers = look.tint ? [...overlays, look.tint] : overlays;
     const backing = fixed ? '' : `${selector}{position:relative;isolation:isolate;overflow:hidden}`;
-    return `${backing}${selector}::before{content:"";position:${position};inset:${look.bleed ? `-${look.bleed}px` : '0'};z-index:-2;pointer-events:none;background:${image} center/cover no-repeat;${look.filter ? `filter:${look.filter};` : ''}}${selector}::after{content:"";position:${position};inset:0;z-index:-1;pointer-events:none;background-image:${layers.map(color => `linear-gradient(${color},${color})`).join(',')}}`;
+    const geometry = aligned ? `background-size:var(--bdt-wallpaper-size,cover);background-position:calc(var(--bdt-wallpaper-x,0px) + ${look.bleed || 0}px) calc(var(--bdt-wallpaper-y,0px) + ${look.bleed || 0}px);` : '';
+    return `${backing}${selector}::before{content:"";position:${position};inset:${look.bleed ? `-${look.bleed}px` : '0'};z-index:-2;pointer-events:none;background:${image} center/cover no-repeat;${geometry}filter:${look.filter || 'none'};}${selector}::after{content:"";position:${position};inset:0;z-index:-1;pointer-events:none;background-image:${layers.map(color => `linear-gradient(${color},${color})`).join(',')}}`;
   }
 
   return { modes, options, normalize, effect, css };

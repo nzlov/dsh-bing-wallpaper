@@ -37,9 +37,12 @@ test('legacy preferences default to no filter; mode amounts are independently re
 });
 
 test('effects are bounded photo-only CSS; tint and reading veils paint above the image', async () => {
-  assert.equal(render('none'), '');
-  for (const mode of filters.modes.slice(1)) assert.equal(render(mode, 0), '');
-  assert.equal(render('bad);display:none', 15), '');
+  for (const css of [render('none'), ...filters.modes.slice(1).map(mode => render(mode, 0)), render('bad);display:none', 15)]) {
+    assert.match(css, /html::before\{[^}]+filter:none/);
+    assert.ok(css.includes(photo));
+    assert.ok(css.includes(wallpaperShade('light')));
+  }
+  assert.equal(filters.css({ selector: 'html', image: '', overlays: [], settings: {} }), '');
   for (const [mode, amount, pattern] of [
     ['blur', 999, /position:fixed;inset:-96px;[^}]*filter:blur\(32px\)/],
     ['frosted', 999, /filter:blur\(32px\)[\s\S]+html::after\{[^}]*rgb\(255 255 255 \/ 24%\)/],
@@ -68,13 +71,13 @@ test('startup keeps the same stored filter for both Follow themes and ignores un
   const day = new Date(2026, 10, 20, 12);
   const output = bootThemeCSS(settings, cache, day, false);
   assert.equal((output.match(/filter:blur\(17px\)/g) || []).length, 2);
-  assert.match(output, /body:not\(\[data-ds-dark-theme\]\) \[data-dsh-boot\]::before\{[^}]*position:absolute/);
+  assert.match(output, /body:not\(\[data-ds-dark-theme\]\) \[data-dsh-boot\]::before\{[^}]*position:fixed/);
   assert.match(output, /body\[data-ds-dark-theme\] \[data-dsh-boot\]::after\{[^}]*background-image:/);
   const standalone = new Script(`(prefs, cache, now) => (${bootThemeCSS.toString()})(prefs, cache, now, false, undefined, (${createWallpaperFilters.toString()})().css)`);
   assert.equal(standalone.runInNewContext()(settings, cache, day), output);
   assert.ok(bootThemeInjection().text.includes(createWallpaperFilters.toString()));
   assert.doesNotMatch(bootThemeCSS(settings, { ...cache, imageUrl: 'https://example.test/invalid' }, day, false), /filter:|::before|https:\/\//);
-  assert.doesNotMatch(bootThemeCSS({ ...settings, filterMode: 'none' }, cache, day, false), /filter:|::before/);
+  assert.match(bootThemeCSS({ ...settings, filterMode: 'none' }, cache, day, false), /\[data-dsh-boot\]::before\{[^}]+filter:none/);
 });
 
 test('both locales name each filter and adjustment; client preview shares the photo effect', async () => {
@@ -95,7 +98,7 @@ test('both locales name each filter and adjustment; client preview shares the ph
   assert.doesNotMatch(source, /filterScope|bdt-filter-note/);
   assert.match(source, /filterOption && row\(filterLabel, h\('input',[^\n]+type: 'range', min: 0, max: filterOption\.max/);
   assert.match(source, /aria-valuetext[^\n]+filterPixels/);
-  assert.match(source, /if \(filterOnly\) \{ settings = next; save\(\); publish\(\{ settings \}\); return; \}/);
+  assert.match(source, /if \(filterOnly\) \{ settings = next; if \(persist\) save\(\); publish\(\{ settings \}\); return; \}/);
   assert.match(source, /wallpaperFilters\.effect\(prefs\)/);
   assert.match(source, /className: 'bdt-preview-image'[\s\S]*filter: look\?\.filter/);
   assert.match(source, /className: 'bdt-preview-tint'[^\n]+backgroundColor: look\.tint/);

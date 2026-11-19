@@ -1,6 +1,6 @@
 {
   "name": "@nzlov/dsh-bing-wallpaper",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "type": "module",
   "description": "Daily Bing wallpaper, image-derived theme colours and automatic day/night appearance for DSH Web.",
   "author": "nzlov",
@@ -41,7 +41,7 @@
     "build": "node scripts/build.mjs",
     "prepack": "npm run build",
     "test": "node --test test/*.test.js",
-    "check": "node --check index.js && node --check bing-source.js && node --check palette.js && node --check client-main.js && node --check appearance.js && node --check boot-theme.js && node --check compatibility.js && node --check wallpaper-filter.js && node --check palette-preview.js && node --check client.js"
+    "check": "node --check index.js && node --check bing-source.js && node --check palette.js && node --check client-main.js && node --check appearance.js && node --check boot-theme.js && node --check compatibility.js && node --check wallpaper-filter.js && node --check sidebar-background.js && node --check wallpaper-alignment.js && node --check palette-preview.js && node --check client.js"
   },
   "dsh": {
     "bundle": {
