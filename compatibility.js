@@ -3,3 +3,53 @@
 // this adapter to its actual CSS-module class; do not recolor images or states.
 // Both normal and uncommon (inverse) capability pills consume the paired roles.
 export const MARKETPLACE_THEME_CSS = `body .nUhMVa_confirmPanel{--fold-bg:var(--dsw-alias-bg-layer-2)!important;--fold-border:var(--dsw-alias-border-l2)!important;--fold-ink:var(--dsw-alias-label-primary)!important;--fold-on-ink:var(--dsw-alias-bg-layer-1)!important}`;
+
+// Fullscreen docked panes and empty cells cover the conversation and slide as
+// a unit. Paint those elements, not the surrounding layout or floating panes.
+const fullscreenRightbar = '[data-sidebar-right-panel="fullscreen"] :is([data-dockkit-host="dock"] > [data-dockkit-pane], [data-dockkit-empty])';
+const rightbarBase = 'var(--dsw-alias-bg-layer-1)';
+const rightbarTint = `color-mix(in srgb, ${rightbarBase}, var(--dsw-alias-brand-primary, ${rightbarBase}) 14%)`;
+export function fullscreenRightbarCSS(dynamic) {
+  const opaque = `${fullscreenRightbar}{background-color:${rightbarBase}}`;
+  // Mix two opaque palette roles so the background picks up the photo's hue
+  // without sharing the guide cards' fill or revealing the conversation.
+  return dynamic ? `${opaque}@supports (background-color:color-mix(in srgb, black, white)){${fullscreenRightbar}{background-color:${rightbarTint}}}` : opaque;
+}
+
+// DSH 0.2.2-rc.4, dsh-context 0.86.0 and Design beta.30. Expose the
+// existing shell wallpaper instead of painting or filtering a second copy.
+const trajectory = '[data-conversation-composer-overlay]:has([data-trajectory-scroll])';
+const ledger = `${trajectory} [data-trajectory-scroll] > table[data-scroll-ready]`;
+const contextPage = 'body :is(.lc-root:not(:is([data-sidebar-right-panel], .lc-modal-card) *), [data-global-panel] .lc-ov-page)';
+const templates = '[data-global-panel] [data-studio-mount] [data-testid="native-template-library"]';
+const pageWallpaper = `
+${trajectory},${trajectory} div:has(> [data-trajectory-scroll]),${templates}{background-color:transparent}
+${contextPage}{--lc-canvas:transparent}
+/* One extra light/dark matte for dense ledger text, not one per wrapper.
+   Sticky toolbar, timeline, selection and details keep their own fills. */
+${ledger}{background-color:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 40%,transparent)}
+`;
+
+// Only the template library UI consumes this bridge. Don't remap Design's
+// document palettes, chart roles, preview colours or portalled overlays.
+const templateTheme = {
+  background: 'bg-layer-1', foreground: 'label-primary',
+  muted: 'bg-layer-2', 'muted-foreground': 'label-secondary',
+  secondary: 'interactive-bg-active', 'secondary-foreground': 'label-primary',
+  accent: 'interactive-bg-hover', 'accent-foreground': 'label-primary',
+  border: 'border-l2', input: 'border-l2', ring: 'brand-primary',
+  primary: 'button-primary-fill', 'primary-foreground': 'label-primary-foreground',
+  'action-background': 'button-primary-fill', 'action-hover': 'button-primary-hover',
+  'action-pressed': 'button-primary-hover', 'action-foreground': 'label-primary-foreground',
+  'action-pressed-foreground': 'label-primary-foreground',
+};
+const pageTheme = `
+${ledger}{--dsw-alias-trajectory-accent:var(--dsw-alias-brand-primary)}
+${contextPage}{--lc-control-track:var(--dsw-alias-bg-layer-2)}
+${contextPage} :is(.lc-card:not(.lc-recom), .lc-pulse-header):not(.lc-modal-card *){background-color:color-mix(in srgb,var(--dsw-alias-bg-layer-1),var(--dsw-alias-brand-primary) 7%)}
+${templates}{${Object.entries(templateTheme).map(([key, alias]) => `--${key}:var(--dsw-alias-${alias})`).join(';')}}
+`;
+
+export function pluginPageCSS(dynamic) {
+  return dynamic ? pageWallpaper + pageTheme : pageWallpaper;
+}

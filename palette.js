@@ -3,10 +3,12 @@ import {
   SchemeContent, SchemeTonalSpot, SchemeFruitSalad, SchemeRainbow, SchemeMonochrome, SchemeVibrant,
   SchemeFidelity, SchemeNeutral, SchemeExpressive, TonalPalette,
 } from '@material/material-color-utilities';
+import { wallpaperFilters } from './wallpaper-filter.js';
 
 // Pure image-colour and scheduling logic; shared by browser bundle and tests.
 export const PALETTE_MODES = Object.freeze(['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']);
-export const DEFAULTS = Object.freeze({ enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28 });
+const { filterMode, filterAmounts } = wallpaperFilters.normalize();
+export const DEFAULTS = Object.freeze({ enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28, filterMode, filterAmounts: Object.freeze(filterAmounts) });
 export function normalizeStrength(value) {
   return Number.isFinite(value) ? Math.round(Math.min(100, Math.max(10, value))) : DEFAULTS.strength;
 }
@@ -31,6 +33,7 @@ export function normalizeSettings(input = {}) {
     day: time(input.day) ? input.day : DEFAULTS.day,
     night: time(input.night) ? input.night : DEFAULTS.night,
     strength: normalizeStrength(input.strength),
+    ...wallpaperFilters.normalize(input),
   };
 }
 export function scheduledScheme(date, day, night) {

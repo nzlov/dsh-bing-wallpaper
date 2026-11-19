@@ -38,6 +38,48 @@ test('wallpaper consumes the shared readability scrim and dynamic-off releases e
   assert.match(source, /if \(!settings\.dynamic\) for \(const key of Object\.keys\(tokens\)\) if \(key !== '--dsw-alias-bg-base'\) delete tokens\[key\]/);
   assert.match(source, /if \(!settings\.enabled \|\| !state\.url\) \{ tokenDisposer\?\.\(\)/);
 });
+test('fullscreen right sidebar keeps its opaque fallback and tints only with dynamic colours', async () => {
+  const { fullscreenRightbarCSS } = await import('../compatibility.js');
+  const selector = '[data-sidebar-right-panel="fullscreen"] :is([data-dockkit-host="dock"] > [data-dockkit-pane], [data-dockkit-empty])';
+  const opaque = `${selector}{background-color:var(--dsw-alias-bg-layer-1)}`;
+  assert.equal(fullscreenRightbarCSS(false), opaque);
+  assert.equal(fullscreenRightbarCSS(true), `${opaque}@supports (background-color:color-mix(in srgb, black, white)){${selector}{background-color:color-mix(in srgb, var(--dsw-alias-bg-layer-1), var(--dsw-alias-brand-primary, var(--dsw-alias-bg-layer-1)) 14%)}}`);
+  const source = await read('client-main.js');
+  const wallpaper = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
+  assert.match(wallpaper, /if \(!s\.settings\.enabled \|\| !s\.url\) return null;[\s\S]+\$\{fullscreenRightbarCSS\(s\.settings\.dynamic\)\}/);
+  const bundle = await read('client.js');
+  assert.ok(bundle.includes(selector) && bundle.includes(') 14%)'), 'prebuilt client includes the scoped tint');
+});
+
+test('tinted fullscreen right sidebar separates guide cards from the background and preserves contrast', () => {
+  const rgb = value => {
+    assert.match(value, /^rgb\(\d+, \d+, \d+\)$/);
+    return value.match(/\d+/g).map(Number);
+  };
+  const accents = [[29, 82, 214], [220, 100, 25], [67, 187, 128], [128, 255, 255], [128, 128, 128]];
+  const surfaces = { light: [], dark: [] };
+  for (const mode of PALETTE_MODES) for (const accent of accents) {
+    const tokens = makeTokens(accent, 100, mode);
+    for (const scheme of ['light', 'dark']) {
+      const color = key => rgb(tokens[key][scheme]);
+      const base = color('--dsw-alias-bg-layer-1'), brand = color('--dsw-alias-brand-primary');
+      const surface = base.map((channel, i) => Math.round(channel * .86 + brand[i] * .14));
+      assert.ok(surface.some((channel, i) => Math.abs(channel - base[i]) >= 10), `${mode}/${scheme}: distinct from guide cards`);
+      for (const role of ['label-primary', 'label-secondary', 'label-tertiary', 'brand-primary']) {
+        assert.ok(contrast(color(`--dsw-alias-${role}`), surface) >= 4.5, `${mode}/${scheme}/${role}`);
+      }
+      for (const role of ['--dsw-alias-border-l3', '--dsw-focus-ring-color']) {
+        assert.ok(contrast(color(role), surface) >= 3, `${mode}/${scheme}/${role}`);
+      }
+      if (mode === 'monochrome') assert.equal(new Set(surface).size, 1);
+      if (mode === 'content' && accent === accents[0]) surfaces[scheme].push(surface);
+      if (mode === 'content' && accent === accents[1]) surfaces[scheme].push(surface);
+    }
+  }
+  for (const [cool, warm] of Object.values(surfaces)) {
+    assert.ok(cool[2] > cool[0] && warm[0] > warm[2], 'background follows the palette hue in both schemes');
+  }
+});
 test('prebuilt artifact ships ten modes without removed help copy', async () => {
   const manifest = JSON.parse(await read('package.json'));
   const client = await read('client.js');

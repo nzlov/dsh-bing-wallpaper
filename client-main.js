@@ -1,6 +1,7 @@
 // Bundled by scripts/build.mjs. No runtime imports except the shared React instance.
 import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from './boot-theme.js';
-import { MARKETPLACE_THEME_CSS } from './compatibility.js';
+import { fullscreenRightbarCSS, MARKETPLACE_THEME_CSS, pluginPageCSS } from './compatibility.js';
+import { wallpaperFilters } from './wallpaper-filter.js';
 import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './palette-preview.js';
 export function createPlugin(React, core, dictionaries, createAppearanceController) {
   const h = React.createElement, NS = 'bing-daily-theme', SOURCE = '@nzlov/dsh-bing-wallpaper';
@@ -47,8 +48,11 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       }
       function update(patch) {
         const next = core.normalizeSettings({ ...settings, ...patch });
-        if (next.day === next.night) { publish({ issue: 'sameTime' }); return; }
+        const filterOnly = Object.keys(next).every(key => key === 'filterMode' || key === 'filterAmounts' || next[key] === settings[key]);
+        if (!filterOnly && next.day === next.night) { publish({ issue: 'sameTime' }); return; }
         if (JSON.stringify(next) === JSON.stringify(settings)) return;
+        // Slider changes leave loading/error feedback, theme tokens and fetches alone.
+        if (filterOnly) { settings = next; save(); publish({ settings }); return; }
         const wasEnabled = settings.enabled, sourceChanged = next.market !== settings.market;
         if (sourceChanged) {
           // Invalidate even a request still decoding: a slow old source must not
@@ -128,11 +132,13 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       const css = `
 .bdt-page{max-width:720px;padding:24px;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}
 .bdt-page h2{font-size:20px;margin:0 0 16px;font-weight:600}.bdt-page p{margin:6px 0 18px;color:var(--dsw-alias-label-secondary)}
-.bdt-photo{position:relative;margin:0;overflow:hidden;border-radius:12px;background:var(--dsw-alias-bg-layer-2)}.bdt-preview{width:100%;aspect-ratio:16/9;min-height:240px;object-fit:cover;display:block;background:var(--dsw-alias-bg-layer-2)}
+.bdt-photo{position:relative;margin:0;overflow:hidden;border-radius:12px;background:var(--dsw-alias-bg-layer-2)}.bdt-preview{position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;min-height:240px;background:var(--dsw-alias-bg-layer-2)}
+.bdt-preview-image,.bdt-preview-tint{position:absolute;inset:0;width:100%;height:100%}.bdt-preview-image{display:block;object-fit:cover;max-width:none}.bdt-preview-tint{pointer-events:none}
 .bdt-card{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);margin:16px 0}
 .bdt-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;flex-wrap:wrap}.bdt-row+ .bdt-row{border-top:1px solid var(--dsw-alias-border-l1)}
 .bdt-control{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bdt-page select,.bdt-page input[type=time],.bdt-page button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;min-height:36px;max-width:100%}
 .bdt-page button{cursor:pointer}.bdt-page button:disabled{cursor:wait;opacity:.55}.bdt-page :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}.bdt-page input{accent-color:var(--dsw-alias-brand-primary)}
+.bdt-page .bdt-wallpaper-select{box-sizing:border-box;width:12rem;min-height:44px}.bdt-filter-range{min-width:0;min-height:44px}
 .bdt-page a{color:var(--dsw-alias-brand-primary)}.bdt-muted{color:var(--dsw-alias-label-secondary);font-size:12px}.bdt-swatches{display:flex;gap:8px;margin-top:10px}.bdt-swatch{width:24px;height:24px;border-radius:50%;border:1px solid var(--dsw-alias-border-l2)}
 .bdt-photo-caption{position:absolute;inset:auto 0 0;max-height:calc(100% - 64px);overflow:auto;padding:30px 16px 14px;color:var(--dsw-alias-tooltip-label);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--dsw-alias-tooltip-bg) 82%,transparent) 26px,color-mix(in srgb,var(--dsw-alias-tooltip-bg) 90%,transparent));font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .bdt-photo-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}.bdt-photo-heading strong{min-width:0;font-size:14px}.bdt-photo-date{white-space:nowrap}.bdt-photo-details{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:5px}.bdt-page .bdt-photo-caption a{min-width:0;color:inherit;text-underline-offset:2px}.bdt-photo-caption .bdt-swatches{flex-shrink:0;margin:0;gap:6px}.bdt-photo-caption .bdt-swatch{width:20px;height:20px;border-color:color-mix(in srgb,var(--dsw-alias-tooltip-label) 55%,transparent)}
@@ -147,22 +153,27 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-palette-group:disabled .bdt-palette-card{cursor:not-allowed}.bdt-palette-group:disabled .bdt-palette-name{color:var(--dsw-alias-label-secondary)}
 .bdt-palette-group,.bdt-palette-card,.bdt-mini,.bdt-mini *{box-sizing:border-box}
 ${PALETTE_PREVIEW_CSS}
-@media(max-width:560px){.bdt-page{padding:16px}.bdt-row{gap:8px}.bdt-row>label{width:100%}}`;
+@media(max-width:560px){.bdt-page{padding:16px}.bdt-row{gap:8px}.bdt-row>label{width:100%}.bdt-row:has(.bdt-wallpaper-select,.bdt-filter-range)>.bdt-control,.bdt-page .bdt-wallpaper-select{width:100%}.bdt-filter-range{flex:1}}`;
       function Wallpaper() {
         // apply() can precede other plugins or a startup failure: keep the boot
         // palette until the real shell actually mounts, even without an image.
         React.useEffect(() => { document.getElementById(BOOT_STYLE_ID)?.remove(); }, []);
         const s = useState();
         if (!s.settings.enabled || !s.url) return null;
-        // Document wallpaper plus a bounded adapter for dshmarket's local fill
-        // variables. No root replacement, image filter or overlay intercepts.
-        const shade = core.wallpaperShade(s.scheme);
-        return h('style', null, `html{background-image:linear-gradient(${shade},${shade}),url(${JSON.stringify(s.url)});background-size:cover;background-position:center;background-attachment:fixed}body{background-color:transparent!important}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}`);
+        // Keep the fullscreen right sidebar opaque whenever the wallpaper
+        // makes the base translucent, including with dynamic colours disabled.
+        const shade = core.wallpaperShade(s.scheme), image = `url(${JSON.stringify(s.url)})`;
+        const filter = wallpaperFilters.css({ selector: 'html', image, overlays: [shade], settings: s.settings, fixed: true });
+        return h('style', null, `html{background-image:linear-gradient(${shade},${shade}),${image};background-size:cover;background-position:center;background-attachment:fixed}body{background-color:transparent!important}${filter}${fullscreenRightbarCSS(s.settings.dynamic)}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
       }
       function Settings() {
         useLocale(); const s = useState(), prefs = s.settings;
         const row = (label, control, hint) => h('div', { className: 'bdt-row' }, h('label', { htmlFor: `bdt-${label}` }, t(label)), h('div', { className: 'bdt-control' }, control, hint));
         const checkbox = key => h('input', { id: `bdt-${key}`, type: 'checkbox', checked: prefs[key], onChange: e => update({ [key]: e.target.checked }) });
+        const filterOption = wallpaperFilters.options[prefs.filterMode], filterAmount = prefs.filterAmounts[prefs.filterMode];
+        const filterLabel = `filterAmount.${prefs.filterMode}`, filterId = `bdt-${filterLabel}`;
+        const look = prefs.enabled ? wallpaperFilters.effect(prefs) : null;
+        const bleed = look?.bleed ?? 0;
         const tokens = React.useMemo(() => core.makeTokens(prefs.dynamic ? s.accent : [112, 112, 112], prefs.strength, prefs.dynamic ? prefs.paletteMode : 'monochrome'), [s.accent, prefs.strength, prefs.paletteMode, prefs.dynamic]);
         // Each option previews its own real palette. Selection/theme changes
         // must not recalculate all ten paired palettes or fetch another image.
@@ -172,7 +183,13 @@ ${PALETTE_PREVIEW_CSS}
         return h('section', { className: 'bdt-page', 'aria-label': t('title') },
           h('style', null, css), h('h2', null, t('title')),
           h('figure', { className: 'bdt-photo' },
-            s.url ? h('img', { className: 'bdt-preview', src: s.url, alt: s.meta?.title || t('preview') }) : h('div', { className: 'bdt-preview', role: 'img', 'aria-label': t('preview') }),
+            s.url ? h('div', { className: 'bdt-preview' },
+              h('img', { className: 'bdt-preview-image', src: s.url, alt: s.meta?.title || t('preview'), style: {
+                filter: look?.filter,
+                ...(bleed ? { inset: -bleed, width: `calc(100% + ${bleed * 2}px)`, height: `calc(100% + ${bleed * 2}px)` } : {}),
+              } }),
+              look?.tint && h('span', { className: 'bdt-preview-tint', 'aria-hidden': true, style: { backgroundColor: look.tint } }))
+              : h('div', { className: 'bdt-preview', role: 'img', 'aria-label': t('preview') }),
             s.meta && h('figcaption', { className: 'bdt-photo-caption' },
               h('div', { className: 'bdt-photo-heading' }, h('strong', null, s.meta.title || t('preview')), h('span', { className: 'bdt-photo-date' }, `${s.meta.date} · ${t(`market.${s.meta.market}`)}`)),
               h('div', { className: 'bdt-photo-details' }, h('a', { href: copyrightUrl, target: '_blank', rel: 'noopener noreferrer' }, s.meta.copyright || t('source')),
@@ -182,7 +199,13 @@ ${PALETTE_PREVIEW_CSS}
                 h('path', { d: 'M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.36 6.36L3 16M8 16H3v5' })))),
           h('span', { className: 'bdt-photo-status', role: 'status', 'aria-live': 'polite' }, !prefs.enabled ? t('paused') : s.busy ? t('loading') : s.issue ? t(s.issue) : t(s.meta ? s.meta.market === prefs.market ? 'ready' : 'sourceFailed' : 'waiting')),
           h('div', { className: 'bdt-card' }, row('enabled', checkbox('enabled')),
-            row('market', h('select', { id: 'bdt-market', value: prefs.market, onChange: e => update({ market: e.target.value }) }, ...['zh-CN', 'en-US'].map(market => h('option', { key: market, value: market }, t(`market.${market}`))))),
+            row('market', h('select', { id: 'bdt-market', value: prefs.market, onChange: e => update({ market: e.target.value }), className: 'bdt-wallpaper-select' }, ...['zh-CN', 'en-US'].map(market => h('option', { key: market, value: market }, t(`market.${market}`))))),
+            row('filterMode', h('select', { id: 'bdt-filterMode', className: 'bdt-wallpaper-select', value: prefs.filterMode, disabled: !prefs.enabled, onChange: e => update({ filterMode: e.target.value }) },
+              ...wallpaperFilters.modes.map(mode => h('option', { key: mode, value: mode }, t(`filter.${mode}`))))),
+            filterOption && row(filterLabel, h('input', { id: filterId, className: 'bdt-filter-range', type: 'range', min: 0, max: filterOption.max, step: 1,
+              value: filterAmount, disabled: !prefs.enabled, 'aria-valuetext': filterOption.unit === 'px' ? `${filterAmount} ${t('filterPixels')}` : `${filterAmount}%`,
+              onChange: e => update({ filterAmounts: { ...prefs.filterAmounts, [prefs.filterMode]: Number(e.target.value) } }),
+            }), h('output', { htmlFor: filterId }, `${filterAmount}${filterOption.unit}`)),
             row('dynamic', checkbox('dynamic')),
             h('fieldset', { className: 'bdt-palette-group', disabled: !prefs.dynamic },
               h('legend', null, t('paletteMode')),

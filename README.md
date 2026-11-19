@@ -11,7 +11,8 @@ Daily Bing wallpapers, image-derived theme colours, and automatic light/dark app
 - China and international (US) Bing sources, with separate caches and no automatic cross-source fallback.
 - Ten colour styles: M3 Content, M3 Tonal Spot, M3 Fruit Salad, M3 Rainbow, M3 Monochrome, Vibrant, Faithful, Soft, Dysfunctional, and Muted.
 - Clickable palette cards show light and dark previews separated by a diagonal line.
-- Wallpaper visibility from 10% to 100%, with a reading overlay; photos, icons, and semantic status colours are not recoloured.
+- Wallpaper visibility from 10% to 100%, with a reading overlay. Icons and semantic status colours are not recoloured.
+- Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength and a live preview. Filters affect only the wallpaper; theme colours still come from the original image.
 - Scheduled, system, follow-DSH, or fixed light/dark appearance. The default schedule is 07:00–19:00 in the browser’s local time zone.
 - Image title, date, source, and copyright overlaid at the bottom of the photo; refresh icon in the top-right corner.
 - Automatic update checks, keeping the previous image on failure; Chinese and English UI.

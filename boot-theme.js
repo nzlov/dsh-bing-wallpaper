@@ -1,4 +1,6 @@
 // Dependency-free bridge for the interval before Client plugins can run.
+import { createWallpaperFilters, wallpaperFilters } from './wallpaper-filter.js';
+
 export const PREFERENCES_KEY = 'dsh.bing-daily-theme.preferences.v1';
 export const BOOT_CACHE_KEY = 'dsh.bing-daily-theme.boot.v1';
 export const BOOT_STYLE_ID = 'bdt-boot-theme';
@@ -19,7 +21,7 @@ export function makeBootCache(settings, tokens, imageUrl) {
 
 // This pure function is also embedded verbatim in the Host's early script.
 // All persisted values are untrusted: no arbitrary CSS or URL interpolation.
-export function bootThemeCSS(settings, cache, now, systemDark, followDark) {
+export function bootThemeCSS(settings, cache, now, systemDark, followDark, renderFilter = wallpaperFilters.css) {
   settings ??= { enabled: true, dynamic: true, paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28 };
   if (!settings || settings.enabled !== true || settings.dynamic !== true || !cache || cache.version !== 1
       || cache.paletteMode !== settings.paletteMode || cache.strength !== settings.strength
@@ -28,8 +30,8 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark) {
   // Follow stays selector-driven: structured row activation order may change
   // after a Host plugin reload, and the native body selector is authoritative.
   if (settings.mode === 'follow' && typeof followDark !== 'boolean') {
-    return bootThemeCSS(settings, cache, now, systemDark, false).replaceAll('[data-dsh-boot]', 'body:not([data-ds-dark-theme]) [data-dsh-boot]')
-      + bootThemeCSS(settings, cache, now, systemDark, true).replaceAll('[data-dsh-boot]', 'body[data-ds-dark-theme] [data-dsh-boot]');
+    return bootThemeCSS(settings, cache, now, systemDark, false, renderFilter).replaceAll('[data-dsh-boot]', 'body:not([data-ds-dark-theme]) [data-dsh-boot]')
+      + bootThemeCSS(settings, cache, now, systemDark, true, renderFilter).replaceAll('[data-dsh-boot]', 'body[data-ds-dark-theme] [data-dsh-boot]');
   }
   let dark;
   if (settings.mode === 'schedule') {
@@ -57,16 +59,18 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark) {
   const matte = colors.background.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
   const imageMatch = typeof url === 'string' && url.length <= 300
     && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);
-  const image = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US')
-    ? `linear-gradient(${matte},${matte}),linear-gradient(${dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)'},${dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)'}),url("${url}")` : 'none';
-  return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:${image}!important;background-size:cover;background-position:center;color-scheme:${dark ? 'dark' : 'light'}}`;
+  const photo = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US') ? `url("${url}")` : '';
+  const shade = dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)';
+  const image = photo ? `linear-gradient(${matte},${matte}),linear-gradient(${shade},${shade}),${photo}` : 'none';
+  const filter = renderFilter({ selector: '[data-dsh-boot]', image: photo, overlays: [matte, shade], settings });
+  return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:${image}!important;background-size:cover;background-position:center;color-scheme:${dark ? 'dark' : 'light'}}${filter}`;
 }
 
 // No network await, timer, observer, global preference or body-style writes.
-function startBootTheme(preferencesKey, cacheKey, styleId, resolveCSS) {
+function startBootTheme(preferencesKey, cacheKey, styleId, resolveCSS, createFilters) {
   try {
     const css = resolveCSS(JSON.parse(localStorage.getItem(preferencesKey)), JSON.parse(localStorage.getItem(cacheKey)),
-      new Date(), typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches);
+      new Date(), typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches, undefined, createFilters().css);
     if (!css) return;
     document.getElementById(styleId)?.remove();
     const style = document.createElement('style');
@@ -75,6 +79,6 @@ function startBootTheme(preferencesKey, cacheKey, styleId, resolveCSS) {
 }
 
 export function bootThemeInjection() {
-  const text = `;(${startBootTheme.toString()})(${JSON.stringify(PREFERENCES_KEY)},${JSON.stringify(BOOT_CACHE_KEY)},${JSON.stringify(BOOT_STYLE_ID)},${bootThemeCSS.toString()});`;
+  const text = `;(${startBootTheme.toString()})(${JSON.stringify(PREFERENCES_KEY)},${JSON.stringify(BOOT_CACHE_KEY)},${JSON.stringify(BOOT_STYLE_ID)},${bootThemeCSS.toString()},${createWallpaperFilters.toString()});`;
   return { kind: 'script', placement: 'body', text };
 }
