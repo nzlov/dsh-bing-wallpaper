@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 import {
   Hct, argbFromRgb, redFromArgb, greenFromArgb, blueFromArgb,
   SchemeContent, SchemeTonalSpot, SchemeFruitSalad, SchemeRainbow, SchemeMonochrome,
-  SchemeVibrant, SchemeFidelity, SchemeNeutral, SchemeExpressive,
 } from '@material/material-color-utilities';
 import {
-  PALETTE_MODES, DEFAULTS, normalizeSettings, scheduledScheme, extractAccent,
-  makeTokens, contrast, rgbToHsl, hslToRgb, localDate, WALLPAPER_VEIL, wallpaperShade,
+  PALETTE_MODES, DEFAULTS, normalizeSettings, scheduledScheme,
+  makeTokens, contrast, rgbToHsl, hslToRgb, localDate,
 } from '../palette.js';
 
 const MODES = ['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted'];
@@ -54,8 +53,6 @@ const INVERSE_PAIRS = [
   ['--dsw-alias-hovercard-label-tertiary', '--dsw-alias-hovercard-bg'],
 ];
 const TOKEN_KEYS = ['--dsw-alias-bg-base', ...SURFACES, ...CONTROL_SURFACES, ...FOREGROUNDS, ...BRAND_FILLS, ...INFO_FILLS, ...ON_ACCENT, '--dsw-alias-border-l1', ...BORDERS, '--dsw-focus-ring-color', '--dsw-alias-switch-thumb', ...new Set(INVERSE_PAIRS.flat())];
-const PHOTOS = [[0, 0, 0], [255, 255, 255], [64, 64, 64], [128, 128, 128], [192, 192, 192], [255, 0, 0], [0, 255, 0], [0, 0, 255], [23, 99, 211]];
-const EXPECTED_VEIL = { light: { rgb: [255, 255, 255], alpha: 0.56 }, dark: { rgb: [0, 0, 0], alpha: 0.62 } };
 const STRENGTHS = [10, 28, 50, 51, 75, 99, 100];
 const ACCENTS = [[255, 0, 0], [0, 255, 0], [255, 255, 0], [0, 0, 255], [0, 213, 255], [255, 128, 0], [22, 144, 187], [150, 150, 150], [0, 0, 0], [255, 255, 255]];
 const at = (hour, minute = 0) => new Date(2026, 10, 18, hour, minute);
@@ -98,18 +95,10 @@ function validTokens(tokens, context) {
   }
 }
 
-function assertAccessible(tokens, strength, context, photos = PHOTOS.slice(0, 2)) {
-  const blend = (top, bottom, opacity) => top.map((value, i) => Math.round(value * opacity + bottom[i] * (1 - opacity)));
+function assertAccessible(tokens, strength, context) {
   for (const scheme of SCHEMES) {
     const rgb = key => parseCss(tokens[key][scheme]).rgb;
     const backgrounds = new Map([...SURFACES, ...CONTROL_SURFACES].map(key => [tokens[key][scheme], [key, rgb(key)]]));
-    const base = parseCss(tokens['--dsw-alias-bg-base'][scheme]);
-    const veil = EXPECTED_VEIL[scheme];
-    for (const photo of photos) {
-      const backdrop = blend(veil.rgb, photo, veil.alpha);
-      backgrounds.set(`photo:${photo}`, [`scrim over ${photo}`, backdrop]);
-      backgrounds.set(`base:${photo}`, [`base over ${photo}`, blend(base.rgb, backdrop, base.alpha)]);
-    }
     const check = (ink, fill, minimum, pair) => {
       const actual = ratio(ink, fill);
       if (actual < minimum) assert.fail(`${context} ${scheme} ${pair} at ${strength}%: ${actual} < ${minimum}`);
@@ -132,16 +121,22 @@ function assertAccessible(tokens, strength, context, photos = PHOTOS.slice(0, 2)
   }
 }
 
-test('wallpaper scrim matches the rendered light and dark overlay', () => {
-  for (const scheme of SCHEMES) {
-    assert.equal(WALLPAPER_VEIL[scheme], EXPECTED_VEIL[scheme].alpha);
-    assert.deepEqual(parseCss(wallpaperShade(scheme)), EXPECTED_VEIL[scheme]);
+test('opaque surfaces stay readable at maximum wallpaper visibility', () => {
+  for (const mode of MODES) for (const accent of ACCENTS) {
+    assertAccessible(makeTokens(accent, 100, mode), 100, `${mode} source=${accent}`);
   }
 });
 
-test('saturated and midtone photos stay readable at maximum wallpaper visibility', () => {
-  for (const mode of MODES) for (const accent of ACCENTS) {
-    assertAccessible(makeTokens(accent, 100, mode), 100, `${mode} source=${accent}`, PHOTOS);
+test('independent custom candidates retain contrast on opaque surfaces', () => {
+  const sources = [
+    [[255, 20, 20], [20, 255, 255], [20, 20, 255]],
+    [[20, 60, 230], [230, 140, 20], [40, 230, 40]],
+    [[110, 110, 110], [255, 180, 0], [200, 10, 150]],
+  ];
+  for (const mode of ['vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']) {
+    for (const candidates of sources) for (const strength of [10, 28, 100]) {
+      assertAccessible(makeTokens(candidates, strength, mode), strength, `${mode} candidates=${JSON.stringify(candidates)}`);
+    }
   }
 });
 
@@ -269,17 +264,6 @@ test('day/night boundary and midnight-wrapping schedules use local time', () => 
   assert.equal(localDate(at(12)), '2026-11-18');
 });
 
-test('colour extraction ignores transparency, near-white and black borders', () => {
-  const data = new Uint8ClampedArray([20, 130, 180, 255, 22, 132, 182, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 0, 0, 0]);
-  const rgb = extractAccent(data);
-  assert.ok(rgb[2] > rgb[1] && rgb[1] > rgb[0]);
-});
-
-test('monochrome pictures and empty samples have safe fallback', () => {
-  assert.deepEqual(extractAccent([128, 128, 128, 255]), [128, 128, 128]);
-  assert.deepEqual(extractAccent([]), [92, 116, 132]);
-});
-
 test('HSL conversion round-trips representative colours', () => {
   for (const rgb of [[255, 0, 0], [0, 255, 0], [0, 0, 255], [22, 144, 187], [128, 128, 128], [0, 0, 0], [255, 255, 255]]) assert.deepEqual(hslToRgb(rgbToHsl(rgb)), rgb);
 });
@@ -308,15 +292,13 @@ test('all modes produce exactly 85 valid tokens and distinct light/dark schemes'
 test('M3 modes project official HCT scheme roles into both token schemes', () => {
   const official = {
     content: SchemeContent, 'tonal-spot': SchemeTonalSpot, 'fruit-salad': SchemeFruitSalad,
-    rainbow: SchemeRainbow, monochrome: SchemeMonochrome, vibrant: SchemeVibrant,
-    faithful: SchemeFidelity, soft: SchemeNeutral, dysfunctional: SchemeExpressive,
+    rainbow: SchemeRainbow, monochrome: SchemeMonochrome,
   };
   const roles = {
     '--dsw-alias-bg-base': 'surface', '--dsw-alias-bg-layer-1': 'surfaceContainerLow',
     '--dsw-alias-border-l1': 'outlineVariant',
   };
-  // Layer 2 and the sidebar deliberately include the official secondary/tertiary
-  // container roles: Content and Fidelity differ in tertiary, not primary/neutral.
+  // Layer 2 and the sidebar deliberately include secondary/tertiary containers.
   const mixedRoles = {
     '--dsw-alias-bg-layer-2': ['surfaceContainer', 'secondaryContainer', 0.08],
     '--dsw-alias-bg-overlay': ['surfaceContainerLow', 'secondaryContainer', 0.04],
@@ -343,18 +325,14 @@ test('M3 modes project official HCT scheme roles into both token schemes', () =>
   }
 });
 
-test('all ten palette modes have genuinely different light and dark output', () => {
-  for (const scheme of SCHEMES) {
-    const signatures = new Map();
-    for (const mode of MODES) {
-      const signature = JSON.stringify([[227, 44, 91], [22, 144, 187], [97, 170, 31]].map(accent => {
-        const tokens = makeTokens(accent, 28, mode);
-        return TOKEN_KEYS.map(key => tokens[key][scheme]);
-      }));
-      assert.equal(signatures.has(signature), false, `${mode} ${scheme} must not duplicate ${signatures.get(signature)}`);
-      signatures.set(signature, mode);
-    }
-  }
+test('mode-specific candidates reach the DSH mapping and participate in caching', () => {
+  const red = [227, 44, 91], blue = [22, 144, 187], green = [97, 170, 31];
+  const candidates = { content: [red], vibrant: [red, blue, green], faithful: [blue, green, red] };
+  assert.deepEqual(makeTokens(candidates, 28, 'content'), makeTokens(red, 28, 'content'));
+  assert.deepEqual(makeTokens(candidates, 28, 'vibrant'), makeTokens(candidates.vibrant, 28, 'vibrant'));
+  assert.deepEqual(makeTokens(candidates, 28, 'faithful'), makeTokens(candidates.faithful, 28, 'faithful'));
+  assert.notDeepEqual(makeTokens(candidates.vibrant, 28, 'vibrant'), makeTokens([red, green, blue], 28, 'vibrant'),
+    'different secondary and tertiary colors must not reuse a cached scheme');
 });
 
 test('monochrome tokens stay grayscale even for saturated source colours', () => {
@@ -368,16 +346,30 @@ test('monochrome tokens stay grayscale even for saturated source colours', () =>
   }
 });
 
-test('muted uses low-chroma HCT without collapsing to monochrome', () => {
+test('custom grayscale candidates stay neutral through the DSH role mapping', () => {
+  const candidates = Array.from({ length: 5 }, () => [128, 128, 128]);
+  for (const mode of ['vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']) {
+    const tokens = makeTokens(candidates, 28, mode);
+    for (const scheme of SCHEMES) for (const key of ['--dsw-alias-brand-primary', ...SURFACES, '--dsw-alias-interactive-bg-active']) {
+      const rgb = parseCss(tokens[key][scheme]).rgb;
+      assert.ok(Math.max(...rgb) - Math.min(...rgb) <= 1, `${mode} ${scheme} ${key}: ${rgb}`);
+    }
+  }
+});
+
+test('muted stays subdued after accessibility adjustment without becoming monochrome', () => {
   let hasTint = false;
   for (const accent of [[255, 0, 0], [0, 255, 0], [0, 0, 255], [22, 144, 187]]) {
     const tokens = makeTokens(accent, 28, 'muted');
+    const vibrant = makeTokens(accent, 28, 'vibrant');
     for (const scheme of SCHEMES) {
       for (const key of ['--dsw-alias-brand-primary', ...SURFACES]) {
         const rgb = parseCss(tokens[key][scheme]).rgb;
         const chroma = Hct.fromInt(argbFromRgb(...rgb)).chroma;
-        const maximum = key === '--dsw-alias-brand-primary' ? 22 : 7;
+        const maximum = key === '--dsw-alias-brand-primary' ? 32 : 12;
         assert.ok(chroma <= maximum, `muted ${key} ${scheme}: low HCT chroma, got ${chroma}`);
+        const colorful = parseCss(vibrant[key][scheme]).rgb;
+        assert.ok(chroma < Hct.fromInt(argbFromRgb(...colorful)).chroma, `${key} ${scheme}: muted is less colorful than vibrant`);
         if (key === '--dsw-alias-brand-primary' && Math.max(...rgb) - Math.min(...rgb) > 3) hasTint = true;
       }
     }

@@ -23,23 +23,26 @@ const rule = (css, selector) => {
   assert.ok(start >= 0, selector);
   return css.slice(start + selector.length + 1, css.indexOf('}', start));
 };
-const render = (input = {}, scheme = 'light') => sidebarBackgroundCSS({
-  settings: core.normalizeSettings(input), image: photo, matte: 'rgba(240, 240, 240, 0.5)', overlays: [core.wallpaperShade(scheme)],
+const render = (input = {}) => sidebarBackgroundCSS({
+  settings: core.normalizeSettings(input), image: photo, matte: 'rgba(240, 240, 240, 0.5)', overlays: [],
 });
 const read = file => readFile(new URL(`../${file}`, import.meta.url), 'utf8');
 
-test('sidebar defaults migrate existing preferences and independently retain bounded filters', () => {
+test('sidebar defaults migrate existing preferences and independently retain bounded options', () => {
   const prefs = core.normalizeSettings({ filterMode: 'blur', filterAmounts: { blur: 17 } });
   assert.equal(prefs.leftSidebar.background, 'wallpaper');
   assert.equal(prefs.rightSidebar.filterMode, 'inherit');
   assert.equal(prefs.leftSidebar.toolbar, true);
   assert.equal(prefs.leftSidebar.tint, true);
+  assert.equal(prefs.leftSidebar.visibilityMode, 'inherit');
+  assert.equal(prefs.rightSidebar.visibilityMode, 'inherit');
+  assert.equal(prefs.leftSidebar.visibility, 28);
   assert.notEqual(prefs.leftSidebar.filterAmounts, prefs.rightSidebar.filterAmounts);
   assert.ok(Object.isFrozen(core.DEFAULTS.leftSidebar.filterAmounts));
   const edited = core.normalizeSettings({
     ...prefs,
-    leftSidebar: { background: 'theme', filterMode: 'blue', filterAmounts: { blue: 999, blur: 18.6 }, toolbar: false, tint: false },
-    rightSidebar: { background: 'wallpaper', filterMode: 'dim', filterAmounts: { dim: -1, blur: 8 }, toolbar: true },
+    leftSidebar: { background: 'theme', filterMode: 'blue', filterAmounts: { blue: 999, blur: 18.6 }, toolbar: false, tint: false, visibilityMode: 'custom', visibility: 103 },
+    rightSidebar: { background: 'wallpaper', filterMode: 'dim', filterAmounts: { dim: -1, blur: 8 }, toolbar: true, visibilityMode: 'custom', visibility: 46.6 },
   });
   assert.equal(edited.leftSidebar.filterAmounts.blue, 60);
   assert.equal(edited.leftSidebar.filterAmounts.blur, 19);
@@ -49,8 +52,11 @@ test('sidebar defaults migrate existing preferences and independently retain bou
   assert.equal(edited.leftSidebar.toolbar, false);
   assert.equal(edited.leftSidebar.tint, false);
   assert.equal(edited.rightSidebar.tint, true);
+  assert.equal(edited.leftSidebar.visibilityMode, 'custom');
+  assert.equal(edited.leftSidebar.visibility, 100);
+  assert.equal(edited.rightSidebar.visibility, 47);
   assert.deepEqual(core.normalizeSettings(JSON.parse(JSON.stringify(edited))), edited);
-  for (const value of [null, false, 'bad', [], { background: '</style>', filterMode: '__proto__', toolbar: 'false', filterAmounts: { blur: Infinity } }]) {
+  for (const value of [null, false, 'bad', [], { background: '</style>', filterMode: '__proto__', toolbar: 'false', visibilityMode: 'other', visibility: Infinity, filterAmounts: { blur: Infinity } }]) {
     assert.deepEqual(normalizeSidebar(value), normalizeSidebar());
   }
 });
@@ -78,7 +84,7 @@ test('desktop, fullscreen and mobile share docked backgrounds without changing f
   assert.equal(sidebarBackgroundCSS({ settings: core.DEFAULTS, image: '', overlays: [] }), '');
 });
 
-test('sidebar effects travel with their own image layer, with reading overlays and independent toolbar fills', async () => {
+test('sidebar effects travel with their own image layer and independent toolbar fills', async () => {
   for (const scheme of ['light', 'dark']) for (const mode of wallpaperFilters.modes) {
     const css = render({
       filterMode: 'blur', filterAmounts: { blur: 7 },
@@ -89,7 +95,7 @@ test('sidebar effects travel with their own image layer, with reading overlays a
     const effect = wallpaperFilters.effect({ filterMode: mode });
     assert.ok(picture.includes(`filter:${effect?.filter || 'none'}`), mode);
     assert.ok(picture.includes(`background:${photo}`));
-    assert.ok(veil.includes(core.wallpaperShade(scheme)), `${mode}: veil paints above the filtered image`);
+    assert.ok(veil.includes('rgba(240, 240, 240, 0.5)'), `${mode}: selected sidebar tint paints above the filtered image`);
     if (effect?.tint) assert.ok(veil.includes(effect.tint));
     assert.ok(rule(css, background(rightPane)).includes('z-index:-1'));
     assert.ok(rule(css, photoLayer(rightPane)).includes('filter:blur(7px)'));
@@ -101,7 +107,7 @@ test('sidebar effects travel with their own image layer, with reading overlays a
   }
   const zero = render({ leftSidebar: { filterMode: 'blur', filterAmounts: { blur: 0 } } });
   assert.ok(rule(zero, photoLayer(leftColumn)).includes('filter:none'));
-  assert.ok(zero.includes('linear-gradient(rgba(255, 255, 255, 0.56)'));
+  assert.ok(zero.includes('linear-gradient(rgba(240, 240, 240, 0.5)'));
   assert.doesNotMatch(render({ leftSidebar: { filterMode: 'blur);display:none', filterAmounts: { blur: '1);color:red' } } }), /display:none|color:red/);
 });
 
@@ -140,11 +146,11 @@ test('solid theme backgrounds remain opaque with dynamic colours on or off', () 
 });
 
 test('wallpaper theme overlay is independent per side; solid mode is the exact opaque sidebar colour', () => {
-  const css = render({ leftSidebar: { tint: false }, rightSidebar: { tint: true } });
+  const css = render({ strength: 100, leftSidebar: { tint: false }, rightSidebar: { tint: true } });
   const [left, right] = css.split(`${rightPane}{background:`);
   assert.ok(!left.includes('rgba(240, 240, 240, 0.5)'));
   assert.ok(right.includes('rgba(240, 240, 240, 0.5)'));
-  assert.ok(left.includes(core.wallpaperShade('light')) && right.includes(core.wallpaperShade('light')));
+  assert.ok(rule(css, veilLayer(leftColumn)).includes('background-image:none'));
   for (const tint of [true, false]) {
     const solid = sidebarBackgroundCSS({
       settings: core.normalizeSettings({ leftSidebar: { background: 'theme', tint }, rightSidebar: { background: 'theme', tint } }),
@@ -174,34 +180,65 @@ test('theme overlay remains visible at maximum wallpaper visibility and only aff
     const tokens = core.makeTokens([29, 82, 214], 100);
     const { base, matte } = sidebarColors(tokens, scheme);
     const settings = core.normalizeSettings({ strength: 100, leftSidebar: { tint: true }, rightSidebar: { tint: false } });
-    const css = sidebarBackgroundCSS({ settings, image: photo, overlays: [core.wallpaperShade(scheme)], base, matte });
+    const css = sidebarBackgroundCSS({ settings, image: photo, overlays: [], base, matte });
     const [left, right] = css.split(`${rightPane}{background:`);
     assert.ok(left.includes(`linear-gradient(${matte},${matte})`));
     assert.ok(!right.includes(matte));
     const rgb = base.match(/\d+/g).map(Number);
     const photoPixel = scheme === 'light' ? 0 : 255;
-    const veil = core.WALLPAPER_VEIL[scheme], shade = scheme === 'light' ? 255 : 0;
-    const uncoloured = shade * veil + photoPixel * (1 - veil);
+    const uncoloured = photoPixel;
     const coloured = rgb.map(channel => channel * SIDEBAR_TINT_ALPHA + uncoloured * (1 - SIDEBAR_TINT_ALPHA));
     assert.ok(coloured.some(channel => Math.abs(channel - uncoloured) >= 10), `${scheme}: checkbox produces a visible overlay at 100%`);
   }
 });
 
-test('sidebar readability holds for light/dark palettes, visibility extremes and filtered-photo extremes', () => {
-  const rgb = css => css.match(/\d+/g).map(Number);
-  for (const mode of core.PALETTE_MODES) for (const strength of [10, 28, 100]) for (const scheme of ['light', 'dark']) {
-    const tokens = core.makeTokens([29, 82, 214], strength, mode);
-    const matte = rgb(tokens['--dsw-specific-sidebar-fill'][scheme]);
-    const veil = core.WALLPAPER_VEIL[scheme], shade = scheme === 'dark' ? 0 : 255;
-    for (const photo of [[0, 0, 0], [255, 255, 255], [48, 110, 246]]) {
-      for (const alpha of [0, SIDEBAR_TINT_ALPHA]) {
-        const surface = photo.map((channel, i) => matte[i] * alpha + (1 - alpha) * (shade * veil + channel * (1 - veil)));
-        for (const role of ['label-primary', 'label-secondary', 'label-tertiary']) {
-          assert.ok(core.contrast(rgb(tokens[`--dsw-alias-${role}`][scheme]), surface) >= 4.5, `${mode}/${strength}/${scheme}/${alpha}/${role}`);
-        }
-      }
+test('sidebar wallpaper has no extra tint when its overlay and filter are off', () => {
+  const css = render({ strength: 100, leftSidebar: { tint: false }, rightSidebar: { tint: false } });
+  for (const surface of [leftColumn, rightPane]) {
+    assert.match(rule(css, photoLayer(surface)), /filter:none/);
+    assert.match(rule(css, veilLayer(surface)), /background-image:none/);
+  }
+});
+
+test('sidebars follow main visibility by default or retain independent custom values', () => {
+  const tint = strength => `color-mix(in srgb, ${base} ${core.backgroundAlpha(strength) * 100}%, transparent)`;
+  const surface = (css, side) => rule(css, veilLayer(side === 'left' ? leftColumn : rightPane));
+  for (const strength of [10, 28, 50, 75, 100]) {
+    const css = render({ strength, leftSidebar: { tint: false }, rightSidebar: { tint: false } });
+    for (const side of ['left', 'right']) {
+      const layer = surface(css, side);
+      if (strength === 100) assert.match(layer, /background-image:none/);
+      else assert.ok(layer.includes(`linear-gradient(${tint(strength)},${tint(strength)})`), `${side} follows ${strength}%`);
     }
   }
+  const sides = {
+    leftSidebar: { tint: false, visibilityMode: 'custom', visibility: 75 },
+    rightSidebar: { tint: false, visibilityMode: 'custom', visibility: 30 },
+  };
+  for (const strength of [10, 100]) {
+    const css = render({ strength, ...sides });
+    assert.ok(surface(css, 'left').includes(tint(75)));
+    assert.ok(surface(css, 'right').includes(tint(30)));
+  }
+  const mixed = render({ strength: 40, ...sides, rightSidebar: { ...sides.rightSidebar, visibilityMode: 'inherit' } });
+  assert.ok(surface(mixed, 'left').includes(tint(75)));
+  assert.ok(surface(mixed, 'right').includes(tint(40)));
+});
+
+test('sidebar visibility fades filters beneath independently selected theme tint', async () => {
+  const css = render({
+    strength: 50, filterMode: 'blue', filterAmounts: { blue: 40 },
+    leftSidebar: { tint: true }, rightSidebar: { tint: false },
+  });
+  const left = rule(css, veilLayer(leftColumn)), right = rule(css, veilLayer(rightPane));
+  const visibility = `color-mix(in srgb, ${base} ${core.backgroundAlpha(50) * 100}%, transparent)`;
+  const filter = 'rgb(48 110 246 / 40%)';
+  assert.ok(left.includes('rgba(240, 240, 240, 0.5)') && left.includes(visibility) && left.includes(filter));
+  assert.ok(left.indexOf('rgba(240, 240, 240, 0.5)') < left.indexOf(visibility));
+  assert.ok(left.indexOf(visibility) < left.indexOf(filter));
+  assert.ok(right.includes(visibility) && right.includes(filter));
+  assert.ok(!right.includes('rgba(240, 240, 240, 0.5)'));
+  assert.deepEqual((await transform(css, { loader: 'css' })).warnings, []);
 });
 
 test('sidebar settings render labelled controls, persist changes and leave wallpaper loading and theme tokens alone', { timeout: 5000 }, async t => {
@@ -218,12 +255,14 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   const storage = new Map([[PREFERENCES_KEY, JSON.stringify(core.normalizeSettings({ mode: 'follow' }))]]);
   globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) };
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  const pixels = new Uint8ClampedArray(112 * 112 * 4);
+  for (let i = 0; i < pixels.length; i += 4) pixels.set([32, 96, 180, 255], i);
   globalThis.document = {
     getElementById() { return null; }, addEventListener() {}, removeEventListener() {},
-    createElement() { return { getContext() { return { drawImage() {}, getImageData() { return { data: new Uint8ClampedArray([32, 96, 180, 255]) }; } }; } }; },
+    createElement() { return { getContext() { return { drawImage() {}, getImageData() { return { data: pixels }; } }; } }; },
   };
   globalThis.Image = class { decode() { return Promise.resolve(); } };
-  let fail = false, overrides = 0, themeWrites = 0;
+  let fail = false, overrides = 0, themeWrites = 0, appliedTokens;
   let loaded;
   const applied = new Promise(resolve => { loaded = resolve; });
   const fetch = t.mock.method(globalThis, 'fetch', async url => {
@@ -234,13 +273,14 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   });
   const React = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child != null && child !== false) }),
-    useSyncExternalStore: (_, get) => get(), useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}],
+    useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
   };
   const ctx = {
     effect(fn) { const dispose = fn(); if (typeof dispose === 'function') disposers.push(dispose); }, on() {},
     locale: { register() {}, bind: () => key => en[key] ?? key, subscribe: () => () => {}, getSnapshot: () => 'en' },
     slots: { inject: (_, fn) => fn(), register: (options, component) => { slots.set(options.id, component); return () => {}; } },
-    theme: { getTheme: () => ({ preference: 'light', active: { colorScheme: 'light' } }), setTheme() { themeWrites++; }, overrideTokens() { overrides++; loaded(); return () => {}; } },
+    theme: { getTheme: () => ({ preference: 'light', active: { colorScheme: 'light' } }), setTheme() { themeWrites++; }, overrideTokens(_source, tokens) { appliedTokens = tokens; overrides++; loaded(); return () => {}; } },
   };
   createPlugin(React, core, { en, zh }, createAppearanceController).apply(ctx);
   await applied;
@@ -251,8 +291,7 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   assert.equal(fetch.mock.callCount(), 2);
   assert.equal(overrides, 1);
   assert.ok(wallpaper().children[0].includes('[data-dockkit-strip]'));
-  const tokens = core.makeTokens([32, 96, 180], core.DEFAULTS.strength);
-  const { base: solid, matte } = sidebarColors(tokens, 'light');
+  const { base: solid, matte } = sidebarColors(appliedTokens, 'light');
   const selectedCard = nodes(settings()).find(node => node.type === 'label' && node.props.htmlFor === 'test-content');
   const sample = nodes(selectedCard).find(node => node.props.className === 'bdt-mini bdt-mini-light');
   assert.equal(solid, sample.props.style['--bdt-mini-canvas']);
@@ -264,14 +303,29 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
     const effect = wallpaperFilters.effect({ filterMode: mode });
     assert.ok(rule(css, 'html::before').includes(`filter:${effect?.filter || 'none'}`));
     assert.ok(rule(css, 'html::before').includes('url('));
-    assert.ok(rule(css, 'html::after').includes(core.wallpaperShade('light')));
+    assert.ok(rule(css, 'html::after').includes(effect?.tint || 'background-image:none'));
     assert.doesNotMatch(rule(css, 'html::after'), /url\(|filter:/);
   }
   change('bdt-filterMode', 'none');
+  change('bdt-strength', '100');
+  assert.match(appliedTokens['--dsw-alias-bg-base'].light, /, 0\)$/);
+  assert.match(rule(wallpaper().children[0], 'html::before'), /filter:none/);
+  assert.match(rule(wallpaper().children[0], 'html::after'), /background-image:none/);
+  for (const side of [leftColumn, rightPane]) assert.doesNotMatch(rule(wallpaper().children[0], veilLayer(side)), /color-mix/);
+  change('bdt-strength', '28');
   fail = true;
   nodes(settings()).find(node => node.props.className === 'bdt-photo-refresh').props.onClick();
   await new Promise(setImmediate);
   const calls = fetch.mock.callCount(), tokenCalls = overrides;
+  change('bdt-leftSidebar.visibilityMode', 'custom');
+  change('bdt-leftSidebar.visibility', '73');
+  const leftVisibility = `color-mix(in srgb, ${solid} ${core.backgroundAlpha(73) * 100}%, transparent)`;
+  assert.ok(rule(wallpaper().children[0], veilLayer(leftColumn)).includes(leftVisibility));
+  assert.ok(!rule(wallpaper().children[0], veilLayer(rightPane)).includes(leftVisibility));
+  change('bdt-leftSidebar.visibilityMode', 'inherit');
+  assert.ok(!rule(wallpaper().children[0], veilLayer(leftColumn)).includes(leftVisibility));
+  change('bdt-leftSidebar.visibilityMode', 'custom');
+  assert.equal(find('bdt-leftSidebar.visibility').props.value, 73);
   change('bdt-leftSidebar.filterMode', 'blur');
   let amount = find('bdt-leftSidebar.filterAmount');
   assert.equal(amount.props.max, 32);
@@ -286,6 +340,7 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   change('bdt-rightSidebar.background', 'theme');
   assert.equal(find('bdt-rightSidebar.filterMode').props.disabled, true);
   assert.equal(find('bdt-rightSidebar.tint').props.disabled, true);
+  assert.equal(find('bdt-rightSidebar.visibilityMode').props.disabled, true);
   assert.ok(wallpaper().children[0].includes(`${rightPane}{background:${solid}}`));
   assert.ok(!wallpaper().children[0].includes(`linear-gradient(${matte},${matte})`));
   change('bdt-rightSidebar.background', 'wallpaper');
@@ -293,6 +348,8 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   change('bdt-rightSidebar.background', 'theme');
   const prefs = JSON.parse(storage.get(PREFERENCES_KEY));
   assert.equal(prefs.leftSidebar.filterAmounts.blur, 21);
+  assert.equal(prefs.leftSidebar.visibilityMode, 'custom');
+  assert.equal(prefs.leftSidebar.visibility, 73);
   assert.equal(prefs.leftSidebar.tint, false);
   assert.equal(prefs.rightSidebar.tint, true);
   assert.equal(prefs.rightSidebar.toolbar, false);
@@ -304,5 +361,8 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   assert.ok(nodes(settings()).some(node => node.props.className === 'bdt-photo-status' && node.children.includes(en.fetchFailed)));
   change('bdt-enabled', undefined, false);
   assert.equal(wallpaper(), null);
-  assert.ok(nodes(settings()).filter(node => node.type === 'fieldset' && node.props.className === 'bdt-sidebar-group').every(node => node.props.disabled));
+  const sidebarFields = nodes(settings()).filter(node => node.type === 'details' && node.props.className === 'bdt-sidebar-group')
+    .flatMap(node => node.children.filter(child => child.type === 'fieldset'));
+  assert.equal(sidebarFields.length, 2);
+  assert.ok(sidebarFields.every(node => node.props.disabled));
 });

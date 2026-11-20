@@ -79,11 +79,11 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
             signal.addEventListener('abort', onAbort, { once: true });
           })]);
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+          const canvas = document.createElement('canvas'); canvas.width = 112; canvas.height = 112;
           const context = canvas.getContext('2d', { willReadFrequently: true });
           if (!context) throw new Error('Canvas unavailable');
-          context.drawImage(image, 0, 0, 64, 64);
-          const accent = core.extractAccent(context.getImageData(0, 0, 64, 64).data);
+          context.drawImage(image, 0, 0, 112, 112);
+          const accent = core.extractImagePalettes(context.getImageData(0, 0, 112, 112).data);
           return { url, accent, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight };
         } catch (error) { URL.revokeObjectURL(url); throw error; }
         finally { if (onAbort) signal.removeEventListener('abort', onAbort); }
@@ -137,7 +137,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-page{max-width:720px;padding:24px;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}
 .bdt-page h2{font-size:20px;margin:0 0 16px;font-weight:600}.bdt-page p{margin:6px 0 18px;color:var(--dsw-alias-label-secondary)}
 .bdt-photo{position:relative;margin:0;overflow:hidden;border-radius:12px;background:var(--dsw-alias-bg-layer-2)}.bdt-preview{position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;min-height:240px;background:var(--dsw-alias-bg-layer-2)}
-.bdt-preview-image,.bdt-preview-tint{position:absolute;inset:0;width:100%;height:100%}.bdt-preview-image{display:block;object-fit:cover;max-width:none}.bdt-preview-tint{pointer-events:none}
+.bdt-preview-image{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;max-width:none}
 .bdt-card{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);margin:16px 0}
 .bdt-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;flex-wrap:wrap}.bdt-row+ .bdt-row{border-top:1px solid var(--dsw-alias-border-l1)}
 .bdt-control{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bdt-page select,.bdt-page input[type=time],.bdt-page button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;min-height:36px;max-width:100%}
@@ -156,7 +156,8 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-palette-caption{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px}.bdt-palette-name{min-width:0;overflow-wrap:anywhere;line-height:1.4}.bdt-palette-check{display:flex;align-items:center;justify-content:center;flex:0 0 18px;height:18px;border-radius:50%;font-size:12px;visibility:hidden;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}.bdt-palette-choice:checked+.bdt-palette-card .bdt-palette-check{visibility:visible}
 .bdt-palette-group:disabled .bdt-palette-card{cursor:not-allowed}.bdt-palette-group:disabled .bdt-palette-name{color:var(--dsw-alias-label-secondary)}
 .bdt-palette-group,.bdt-palette-card,.bdt-mini,.bdt-mini *{box-sizing:border-box}
-.bdt-sidebar-group{min-width:0;margin:16px 0 0;padding:0;border:0;border-top:1px solid var(--dsw-alias-border-l1)}.bdt-sidebar-group legend{padding:0 8px 0 0;font:inherit;font-weight:600}
+.bdt-sidebar-group{min-width:0;margin:16px 0 0;border-top:1px solid var(--dsw-alias-border-l1)}.bdt-sidebar-group summary{padding:12px 0;font:inherit;font-weight:600;cursor:pointer}
+.bdt-sidebar-group fieldset{min-width:0;margin:0;padding:0;border:0}.bdt-sidebar-legend{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 ${PALETTE_PREVIEW_CSS}
 @media(max-width:560px){.bdt-page{padding:16px}.bdt-row{gap:8px}.bdt-row>label{width:100%}.bdt-row:has(.bdt-wallpaper-select,.bdt-filter-range)>.bdt-control,.bdt-page .bdt-wallpaper-select{width:100%}.bdt-filter-range{flex:1}}`;
       function Wallpaper() {
@@ -174,15 +175,17 @@ ${PALETTE_PREVIEW_CSS}
         const colors = React.useMemo(() => core.makeTokens(s.settings.dynamic ? s.accent : [112, 112, 112], s.settings.strength, s.settings.dynamic ? s.settings.paletteMode : 'monochrome'),
           [s.accent, s.settings.strength, s.settings.dynamic, s.settings.paletteMode]);
         if (!s.settings.enabled || !s.url) return null;
-        const shade = core.wallpaperShade(s.scheme), image = `url(${JSON.stringify(s.url)})`;
-        const filter = wallpaperFilters.css({ selector: 'html', image, overlays: [shade], settings: s.settings, fixed: true, aligned: true });
+        const image = `url(${JSON.stringify(s.url)})`;
+        const filter = wallpaperFilters.css({ selector: 'html', image, overlays: [], settings: s.settings, fixed: true, aligned: true });
         const mainBase = colors['--dsw-alias-bg-base'][s.scheme].replace(/^rgba\((\d+, \d+, \d+), [^)]+\)$/, 'rgb($1)');
         const { base, matte } = sidebarColors(colors, s.scheme);
-        const sidebars = sidebarBackgroundCSS({ settings: s.settings, image, overlays: [shade], matte, base });
+        const sidebars = sidebarBackgroundCSS({ settings: s.settings, image, overlays: [], matte, base });
         return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${sidebars}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
       }
       function Settings() {
         useLocale(); const s = useState(), prefs = s.settings;
+        const [sidebarOpen, setSidebarOpen] = React.useState(() => Object.fromEntries(
+          ['leftSidebar', 'rightSidebar'].map(key => [key, prefs[key].visibilityMode === 'custom'])));
         const row = (label, control, hint, title = t(label)) => h('div', { key: label, className: 'bdt-row' }, h('label', { htmlFor: `bdt-${label}` }, title), h('div', { className: 'bdt-control' }, control, hint));
         const checkbox = key => h('input', { id: `bdt-${key}`, type: 'checkbox', checked: prefs[key], onChange: e => update({ [key]: e.target.checked }) });
         const filterOption = wallpaperFilters.options[prefs.filterMode], filterAmount = prefs.filterAmounts[prefs.filterMode];
@@ -192,22 +195,30 @@ ${PALETTE_PREVIEW_CSS}
           const change = patch => update({ [key]: { ...sidebar, ...patch } });
           const id = field => `bdt-${key}.${field}`;
           const scopedRow = (field, control, hint, label = field) => row(`${key}.${field}`, control, hint, t(label));
-          return h('fieldset', { key, className: 'bdt-sidebar-group', disabled: !prefs.enabled },
-            h('legend', null, t(key)),
-            scopedRow('background', h('select', { id: id('background'), className: 'bdt-wallpaper-select', value: sidebar.background, onChange: e => change({ background: e.target.value }) },
-              ...['wallpaper', 'theme'].map(mode => h('option', { key: mode, value: mode }, t(`sidebarBackground.${mode}`)))), null, 'sidebarBackground'),
-            scopedRow('tint', h('input', { id: id('tint'), type: 'checkbox', checked: sidebar.tint, disabled: sidebar.background !== 'wallpaper', onChange: e => change({ tint: e.target.checked }) }), null, 'sidebarTint'),
-            scopedRow('filterMode', h('select', { id: id('filterMode'), className: 'bdt-wallpaper-select', value: sidebar.filterMode, disabled: sidebar.background !== 'wallpaper', onChange: e => change({ filterMode: e.target.value }) },
-              ...['inherit', ...wallpaperFilters.modes].map(mode => h('option', { key: mode, value: mode }, t(`filter.${mode}`))))),
-            option && scopedRow('filterAmount', h('input', { id: id('filterAmount'), className: 'bdt-filter-range', type: 'range', min: 0, max: option.max, step: 1,
-              value: sidebar.filterAmounts[sidebar.filterMode], disabled: sidebar.background !== 'wallpaper',
-              'aria-valuetext': option.unit === 'px' ? `${sidebar.filterAmounts[sidebar.filterMode]} ${t('filterPixels')}` : `${sidebar.filterAmounts[sidebar.filterMode]}%`,
-              onChange: e => change({ filterAmounts: { ...sidebar.filterAmounts, [sidebar.filterMode]: Number(e.target.value) } }),
-            }), h('output', { htmlFor: id('filterAmount') }, `${sidebar.filterAmounts[sidebar.filterMode]}${option.unit}`), `filterAmount.${sidebar.filterMode}`),
-            scopedRow('toolbar', h('input', { id: id('toolbar'), type: 'checkbox', checked: sidebar.toolbar, onChange: e => change({ toolbar: e.target.checked }) }), null, 'sidebarToolbar'));
+          return h('details', { key, id: `bdt-${key}`, className: 'bdt-sidebar-group', open: sidebarOpen[key],
+            onToggle: e => { const open = e.currentTarget.open; setSidebarOpen(current => ({ ...current, [key]: open })); },
+          },
+            h('summary', null, t(key)),
+            h('fieldset', { disabled: !prefs.enabled },
+              h('legend', { className: 'bdt-sidebar-legend' }, t(key)),
+              scopedRow('background', h('select', { id: id('background'), className: 'bdt-wallpaper-select', value: sidebar.background, onChange: e => change({ background: e.target.value }) },
+                ...['wallpaper', 'theme'].map(mode => h('option', { key: mode, value: mode }, t(`sidebarBackground.${mode}`)))), null, 'sidebarBackground'),
+              scopedRow('visibilityMode', h('select', { id: id('visibilityMode'), className: 'bdt-wallpaper-select', value: sidebar.visibilityMode, disabled: sidebar.background !== 'wallpaper', onChange: e => change({ visibilityMode: e.target.value }) },
+                ...['inherit', 'custom'].map(mode => h('option', { key: mode, value: mode }, t(`sidebarVisibility.${mode}`)))), null, 'sidebarVisibility'),
+              sidebar.visibilityMode === 'custom' && scopedRow('visibility', h('input', { id: id('visibility'), className: 'bdt-filter-range', type: 'range', min: 10, max: 100, step: 1,
+                value: sidebar.visibility, disabled: sidebar.background !== 'wallpaper', 'aria-valuetext': `${sidebar.visibility}%`,
+                onChange: e => change({ visibility: Number(e.target.value) }),
+              }), h('output', { htmlFor: id('visibility') }, `${sidebar.visibility}%`), 'sidebarVisibilityAmount'),
+              scopedRow('tint', h('input', { id: id('tint'), type: 'checkbox', checked: sidebar.tint, disabled: sidebar.background !== 'wallpaper', onChange: e => change({ tint: e.target.checked }) }), null, 'sidebarTint'),
+              scopedRow('filterMode', h('select', { id: id('filterMode'), className: 'bdt-wallpaper-select', value: sidebar.filterMode, disabled: sidebar.background !== 'wallpaper', onChange: e => change({ filterMode: e.target.value }) },
+                ...['inherit', ...wallpaperFilters.modes].map(mode => h('option', { key: mode, value: mode }, t(`filter.${mode}`))))),
+              option && scopedRow('filterAmount', h('input', { id: id('filterAmount'), className: 'bdt-filter-range', type: 'range', min: 0, max: option.max, step: 1,
+                value: sidebar.filterAmounts[sidebar.filterMode], disabled: sidebar.background !== 'wallpaper',
+                'aria-valuetext': option.unit === 'px' ? `${sidebar.filterAmounts[sidebar.filterMode]} ${t('filterPixels')}` : `${sidebar.filterAmounts[sidebar.filterMode]}%`,
+                onChange: e => change({ filterAmounts: { ...sidebar.filterAmounts, [sidebar.filterMode]: Number(e.target.value) } }),
+              }), h('output', { htmlFor: id('filterAmount') }, `${sidebar.filterAmounts[sidebar.filterMode]}${option.unit}`), `filterAmount.${sidebar.filterMode}`),
+              scopedRow('toolbar', h('input', { id: id('toolbar'), type: 'checkbox', checked: sidebar.toolbar, onChange: e => change({ toolbar: e.target.checked }) }), null, 'sidebarToolbar')));
         };
-        const look = prefs.enabled ? wallpaperFilters.effect(prefs) : null;
-        const bleed = look?.bleed ?? 0;
         const tokens = React.useMemo(() => core.makeTokens(prefs.dynamic ? s.accent : [112, 112, 112], prefs.strength, prefs.dynamic ? prefs.paletteMode : 'monochrome'), [s.accent, prefs.strength, prefs.paletteMode, prefs.dynamic]);
         // Each option previews its own real palette. Selection/theme changes
         // must not recalculate all ten paired palettes or fetch another image.
@@ -218,11 +229,7 @@ ${PALETTE_PREVIEW_CSS}
           h('style', null, css), h('h2', null, t('title')),
           h('figure', { className: 'bdt-photo' },
             s.url ? h('div', { className: 'bdt-preview' },
-              h('img', { className: 'bdt-preview-image', src: s.url, alt: s.meta?.title || t('preview'), style: {
-                filter: look?.filter,
-                ...(bleed ? { inset: -bleed, width: `calc(100% + ${bleed * 2}px)`, height: `calc(100% + ${bleed * 2}px)` } : {}),
-              } }),
-              look?.tint && h('span', { className: 'bdt-preview-tint', 'aria-hidden': true, style: { backgroundColor: look.tint } }))
+              h('img', { className: 'bdt-preview-image', src: s.url, alt: s.meta?.title || t('preview') }))
               : h('div', { className: 'bdt-preview', role: 'img', 'aria-label': t('preview') }),
             s.meta && h('figcaption', { className: 'bdt-photo-caption' },
               h('div', { className: 'bdt-photo-heading' }, h('strong', null, s.meta.title || t('preview')), h('span', { className: 'bdt-photo-date' }, `${s.meta.date} · ${t(`market.${s.meta.market}`)}`)),
@@ -240,6 +247,9 @@ ${PALETTE_PREVIEW_CSS}
               value: filterAmount, disabled: !prefs.enabled, 'aria-valuetext': filterOption.unit === 'px' ? `${filterAmount} ${t('filterPixels')}` : `${filterAmount}%`,
               onChange: e => update({ filterAmounts: { ...prefs.filterAmounts, [prefs.filterMode]: Number(e.target.value) } }),
             }), h('output', { htmlFor: filterId }, `${filterAmount}${filterOption.unit}`)),
+            row('mode', h('select', { id: 'bdt-mode', value: prefs.mode, onChange: e => update({ mode: e.target.value }) }, ...['schedule', 'system', 'follow', 'light', 'dark'].map(mode => h('option', { key: mode, value: mode }, t(mode))))),
+            prefs.mode === 'schedule' && h('div', null, ...['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) })))),
+            row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`)),
             ...['leftSidebar', 'rightSidebar'].map(sidebarControls),
             row('dynamic', checkbox('dynamic')),
             h('fieldset', { className: 'bdt-palette-group', disabled: !prefs.dynamic },
@@ -248,10 +258,7 @@ ${PALETTE_PREVIEW_CSS}
                 h('label', { key: mode, className: 'bdt-palette-option', htmlFor: `${paletteGroup}-${mode}` },
                   h('input', { id: `${paletteGroup}-${mode}`, className: 'bdt-palette-choice', type: 'radio', name: paletteGroup, value: mode, checked: prefs.paletteMode === mode, onChange: () => update({ paletteMode: mode }) }),
                   h('span', { className: 'bdt-palette-card' }, renderPaletteMiniature(h, previewTokens),
-                    h('span', { className: 'bdt-palette-caption' }, h('span', { className: 'bdt-palette-name' }, t(`palette.${mode}`)), h('span', { className: 'bdt-palette-check', 'aria-hidden': true }, '✓'))))))),
-            row('mode', h('select', { id: 'bdt-mode', value: prefs.mode, onChange: e => update({ mode: e.target.value }) }, ...['schedule', 'system', 'follow', 'light', 'dark'].map(mode => h('option', { key: mode, value: mode }, t(mode))))),
-            prefs.mode === 'schedule' && h('div', null, ...['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) })))),
-            row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`))),
+                    h('span', { className: 'bdt-palette-caption' }, h('span', { className: 'bdt-palette-name' }, t(`palette.${mode}`)), h('span', { className: 'bdt-palette-check', 'aria-hidden': true }, '✓')))))))),
           s.storageIssue && h('p', { role: 'status' }, t('storageFailed')));
       }
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'bing-daily-theme.wallpaper', order: -100 }, Wallpaper));

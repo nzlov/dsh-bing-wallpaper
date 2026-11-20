@@ -1,10 +1,14 @@
 import {
   Hct, argbFromRgb, redFromArgb, greenFromArgb, blueFromArgb,
-  SchemeContent, SchemeTonalSpot, SchemeFruitSalad, SchemeRainbow, SchemeMonochrome, SchemeVibrant,
-  SchemeFidelity, SchemeNeutral, SchemeExpressive, TonalPalette,
+  SchemeContent, SchemeTonalSpot, SchemeFruitSalad, SchemeRainbow, SchemeMonochrome,
 } from '@material/material-color-utilities';
+import { makeCustomSchemes } from './custom-palette.js';
 import { wallpaperFilters } from './wallpaper-filter.js';
 import { normalizeSidebar } from './sidebar-background.js';
+import { DEFAULT_STRENGTH, normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
+
+export { extractImagePalettes } from './image-palette.js';
+export { normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
 
 // Pure image-colour and scheduling logic; shared by browser bundle and tests.
 export const PALETTE_MODES = Object.freeze(['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']);
@@ -14,21 +18,9 @@ const sidebarDefaults = () => {
   return Object.freeze({ ...sidebar, filterAmounts: Object.freeze(sidebar.filterAmounts) });
 };
 export const DEFAULTS = Object.freeze({
-  enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28,
+  enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: DEFAULT_STRENGTH,
   filterMode, filterAmounts: Object.freeze(filterAmounts), leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
 });
-export function normalizeStrength(value) {
-  return Number.isFinite(value) ? Math.round(Math.min(100, Math.max(10, value))) : DEFAULTS.strength;
-}
-export function backgroundAlpha(strength) {
-  return Math.sqrt(1 - normalizeStrength(strength) / 100);
-}
-// A separate photo scrim keeps text over bare page backgrounds readable even
-// when the app base is fully transparent at 100% wallpaper visibility.
-export const WALLPAPER_VEIL = Object.freeze({ light: .56, dark: .62 });
-export function wallpaperShade(scheme) {
-  return scheme === 'dark' ? `rgba(0, 0, 0, ${WALLPAPER_VEIL.dark})` : `rgba(255, 255, 255, ${WALLPAPER_VEIL.light})`;
-}
 export function normalizeSettings(input = {}) {
   if (!input || typeof input !== 'object') input = {};
   const time = value => typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
@@ -81,61 +73,30 @@ export function contrast(a, b) {
   const x = luminance(a), y = luminance(b);
   return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
 }
-export function extractAccent(pixels) {
-  const bins = new Map();
-  for (let i = 0; i + 3 < pixels.length; i += 4) {
-    if (pixels[i + 3] < 200) continue;
-    const rgb = [pixels[i], pixels[i + 1], pixels[i + 2]], [h, s, l] = rgbToHsl(rgb);
-    if (s < 18 || l < 12 || l > 88) continue;
-    const key = Math.floor(h / 15), weight = (.25 + s / 100) * (1 - Math.abs(l - 50) / 65);
-    const bin = bins.get(key) || { weight: 0, rgb: [0, 0, 0] };
-    bin.weight += weight;
-    rgb.forEach((v, j) => { bin.rgb[j] += v * weight; });
-    bins.set(key, bin);
-  }
-  const best = [...bins.values()].sort((a, b) => b.weight - a.weight)[0];
-  // Monochrome pictures keep their own neutral hue instead of inventing a saturated accent.
-  if (!best) {
-    let count = 0; const sum = [0, 0, 0];
-    for (let i = 0; i + 3 < pixels.length; i += 4) if (pixels[i + 3] >= 200) { count++; sum.forEach((_, j) => { sum[j] += pixels[i + j]; }); }
-    return count ? sum.map(v => Math.round(v / count)) : [92, 116, 132];
-  }
-  return best.rgb.map(v => Math.round(v / best.weight));
-}
-// Additional style names are plugin mappings, not an assertion about another app's algorithms.
-class SchemeMuted extends SchemeNeutral {
-  constructor(source, isDark, contrastLevel) {
-    super(source, isDark, contrastLevel);
-    const hue = source.hue;
-    Object.assign(this, {
-      primaryPalette: TonalPalette.fromHueAndChroma(hue, Math.min(source.chroma, 20)),
-      secondaryPalette: TonalPalette.fromHueAndChroma(hue, Math.min(source.chroma, 8)),
-      tertiaryPalette: TonalPalette.fromHueAndChroma((hue + 30) % 360, Math.min(source.chroma, 12)),
-      neutralPalette: TonalPalette.fromHueAndChroma(hue, 2),
-      neutralVariantPalette: TonalPalette.fromHueAndChroma(hue, 4),
-    });
-  }
-}
 const MATERIAL_SCHEMES = Object.freeze({
   content: SchemeContent, 'tonal-spot': SchemeTonalSpot, 'fruit-salad': SchemeFruitSalad,
-  rainbow: SchemeRainbow, monochrome: SchemeMonochrome, vibrant: SchemeVibrant,
-  faithful: SchemeFidelity, soft: SchemeNeutral, dysfunctional: SchemeExpressive, muted: SchemeMuted,
+  rainbow: SchemeRainbow, monochrome: SchemeMonochrome,
 });
 const schemeCache = new Map();
 const fromArgb = argb => [redFromArgb(argb), greenFromArgb(argb), blueFromArgb(argb)];
 const rgbCss = rgb => `rgb(${rgb.join(', ')})`;
-function schemesFor(accent, mode) {
-  const source = argbFromRgb(...accent), key = `${mode}:${source}`;
+function schemesFor(candidates, mode) {
+  const key = `${mode}:${candidates.map(rgb => rgb.join(',')).join(';')}`;
   if (!schemeCache.has(key)) {
-    const Scheme = MATERIAL_SCHEMES[mode], hct = Hct.fromInt(source);
-    schemeCache.set(key, [new Scheme(hct, false, 0), new Scheme(hct, true, 0)]);
+    const Scheme = MATERIAL_SCHEMES[mode];
+    if (Scheme) {
+      const hct = Hct.fromInt(argbFromRgb(...candidates[0]));
+      schemeCache.set(key, [new Scheme(hct, false, 0), new Scheme(hct, true, 0)]);
+    } else {
+      schemeCache.set(key, makeCustomSchemes(candidates, mode));
+    }
     if (schemeCache.size > 22) schemeCache.delete(schemeCache.keys().next().value);
   }
   return schemeCache.get(key);
 }
-function materialTokens(accent, strength, mode) {
+function themeTokens(candidates, strength, mode) {
   const tokens = {}, alpha = backgroundAlpha(strength);
-  for (const [i, scheme] of schemesFor(accent, mode).entries()) {
+  for (const [i, scheme] of schemesFor(candidates, mode).entries()) {
     const dark = i === 1, variant = dark ? 'dark' : 'light';
     const values = {
       '--dsw-alias-bg-base': fromArgb(scheme.surface),
@@ -145,9 +106,8 @@ function materialTokens(accent, strength, mode) {
       '--dsw-alias-border-l1': fromArgb(scheme.outlineVariant),
       '--dsw-alias-border-l2': fromArgb(scheme.outline),
     };
-    // DSH exposes only one brand role. Let secondary and tertiary palettes also
-    // contribute to gentle surface tints so Content/Faithful do not collapse
-    // into the same visible theme just because their primary palettes agree.
+    // DSH exposes one brand role, so carry the semantic secondary and tertiary
+    // containers into selected and sidebar surfaces without recoloring states.
     const tint = (base, role, amount) => base.map((v, channel) => Math.round(v * (1 - amount) + role[channel] * amount));
     values['--dsw-alias-bg-layer-2'] = tint(values['--dsw-alias-bg-layer-2'], fromArgb(scheme.secondaryContainer), .08);
     values['--dsw-specific-sidebar-fill'] = tint(values['--dsw-specific-sidebar-fill'], fromArgb(scheme.tertiaryContainer), .18);
@@ -199,15 +159,9 @@ function materialTokens(accent, strength, mode) {
       '--dsw-alias-markdown-citation': selected,
     };
     Object.assign(values, surfaceAliases);
+    // An unmasked photo can contain every luminance; no single foreground can
+    // guarantee contrast over it. Keep opaque controls and panels readable.
     const backgrounds = [surface, values['--dsw-alias-bg-layer-2'], values['--dsw-alias-bg-overlay'], values['--dsw-specific-sidebar-fill'], selected, hover];
-    const veil = WALLPAPER_VEIL[variant], veilChannel = dark ? 0 : 255;
-    // Monotonic RGB compositing: black and white bound every photo pixel.
-    // Check both bare photo pages and pages using the translucent base token.
-    for (const photo of [0, 255]) {
-      const backdrop = photo * (1 - veil) + veilChannel * veil;
-      backgrounds.push([backdrop, backdrop, backdrop]);
-      backgrounds.push(values['--dsw-alias-bg-base'].map(v => v * alpha + backdrop * (1 - alpha)));
-    }
     const accessible = (palette, start, minimum = 4.6) => {
       let tone = Math.round(start);
       while (backgrounds.some(bg => contrast(fromArgb(palette.tone(tone)), bg) < minimum) && tone > 0 && tone < 100) tone += dark ? 1 : -1;
@@ -260,9 +214,15 @@ function materialTokens(accent, strength, mode) {
 export function makeTokens(accent, strength = DEFAULTS.strength, mode = DEFAULTS.paletteMode) {
   strength = normalizeStrength(strength);
   const fallback = [92, 116, 132];
-  accent = (Array.isArray(accent) || ArrayBuffer.isView(accent)) && accent.length >= 3
-    ? fallback.map((value, i) => Number.isFinite(accent[i]) ? Math.round(Math.max(0, Math.min(255, accent[i]))) : value)
-    : fallback;
-  const selected = typeof mode === 'string' && Object.hasOwn(MATERIAL_SCHEMES, mode) ? mode : DEFAULTS.paletteMode;
-  return materialTokens(accent, strength, selected);
+  const selected = typeof mode === 'string' && PALETTE_MODES.includes(mode) ? mode : DEFAULTS.paletteMode;
+  // Decoded wallpapers provide per-mode candidates; accepting a single RGB
+  // remains useful before the first image and for existing integrations.
+  if (accent && !Array.isArray(accent) && !ArrayBuffer.isView(accent) && typeof accent === 'object') {
+    accent = Object.hasOwn(accent, selected) ? accent[selected] : fallback;
+  }
+  const list = Array.isArray(accent) && Array.isArray(accent[0]) ? accent.slice(0, 5) : [accent];
+  const candidates = list.map(rgb => (Array.isArray(rgb) || ArrayBuffer.isView(rgb)) && rgb.length >= 3
+    ? fallback.map((value, i) => Number.isFinite(rgb[i]) ? Math.round(Math.max(0, Math.min(255, rgb[i]))) : value)
+    : fallback);
+  return themeTokens(candidates.length ? candidates : [fallback], strength, selected);
 }

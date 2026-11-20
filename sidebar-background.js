@@ -1,4 +1,5 @@
 import { wallpaperFilters } from './wallpaper-filter.js';
+import { backgroundAlpha, normalizeStrength } from './wallpaper-visibility.js';
 
 export const SIDEBAR_COLOR_ROLE = '--dsw-specific-sidebar-fill';
 export const SIDEBAR_TINT_ALPHA = .6;
@@ -14,6 +15,8 @@ export function normalizeSidebar(input) {
     background: input?.background === 'theme' ? 'theme' : 'wallpaper',
     ...wallpaperFilters.normalize(input),
     filterMode: wallpaperFilters.modes.includes(input?.filterMode) ? input.filterMode : 'inherit',
+    visibilityMode: input?.visibilityMode === 'custom' ? 'custom' : 'inherit',
+    visibility: normalizeStrength(input?.visibility),
     tint: typeof input?.tint === 'boolean' ? input.tint : true,
     toolbar: typeof input?.toolbar === 'boolean' ? input.toolbar : true,
   };
@@ -46,9 +49,7 @@ export function mountSidebarBackground(document, surface) {
   return layer;
 }
 
-// The caller supplies a decoded image URL and the same visibility/readability
-// overlays as the main wallpaper. Filter only the dedicated image element;
-// never filter the pane, which can contain editors, iframes and fixed controls.
+// Filter only the dedicated image element, never the pane's content.
 export function sidebarBackgroundCSS({ settings, image, overlays, matte, base = 'var(--dsw-alias-bg-layer-1)' }) {
   if (!settings.enabled || !image) return '';
   return ['leftSidebar', 'rightSidebar'].map(key => {
@@ -77,14 +78,18 @@ ${rightPane} :is([data-dockkit-strip], [data-dockkit-strip-tabs], [data-dockkit-
       return backing + solid + clear + toolbar;
     }
     const look = wallpaperFilters.effect(sidebar.filterMode === 'inherit' ? settings : sidebar);
-    const layers = sidebar.tint && matte ? [matte, ...overlays] : [...overlays];
+    const visibility = sidebar.visibilityMode === 'custom' ? sidebar.visibility : settings.strength;
+    const alpha = backgroundAlpha(visibility);
+    const visibilityTint = `color-mix(in srgb, ${base} ${alpha * 100}%, transparent)`;
+    // Visibility fades the filtered photo, while the optional theme tint stays independent.
+    const layers = [...(sidebar.tint && matte ? [matte] : []), ...(alpha ? [visibilityTint] : []), ...overlays];
     if (look?.tint) layers.push(look.tint);
     const bleed = look?.bleed || 0;
     // The moving pane never paints an unfiltered fallback photo. Its image
     // owns the filter, while the veil and theme tint travel in the same layer.
     // Dedicated elements also leave Dockkit's ::after reveal flash untouched.
     const picture = `${photo}{position:absolute;inset:${bleed ? `-${bleed}px` : '0'};z-index:0;pointer-events:none;background:${image} no-repeat;background-size:var(--bdt-wallpaper-size,cover);background-position:calc(var(--bdt-wallpaper-x,0px) + ${bleed}px) calc(var(--bdt-wallpaper-y,0px) + ${bleed}px);filter:${look?.filter || 'none'}}`;
-    const scrim = `${veil}{position:absolute;inset:0;z-index:1;pointer-events:none;background-image:${layers.map(color => `linear-gradient(${color},${color})`).join(',')}}`;
+    const scrim = `${veil}{position:absolute;inset:0;z-index:1;pointer-events:none;background-image:${layers.map(color => `linear-gradient(${color},${color})`).join(',') || 'none'}}`;
     return `${backing}${layer}{visibility:inherit}${picture}${scrim}${clear}${toolbar}`;
   }).join('');
 }

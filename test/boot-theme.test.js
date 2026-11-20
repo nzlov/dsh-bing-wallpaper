@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { BOOT_CACHE_KEY, BOOT_STYLE_ID, PREFERENCES_KEY, makeBootCache, bootThemeCSS, bootThemeInjection } from '../boot-theme.js';
 import { MARKETPLACE_THEME_CSS } from '../compatibility.js';
 import { wallpaperFilters } from '../wallpaper-filter.js';
-import { DEFAULTS, PALETTE_MODES, makeTokens, contrast, backgroundAlpha, WALLPAPER_VEIL } from '../palette.js';
+import { DEFAULTS, PALETTE_MODES, makeTokens, contrast, backgroundAlpha } from '../palette.js';
 
 const BOOT_SCRIPT = bootThemeInjection().text;
 const imageUrl = '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg';
@@ -38,6 +38,8 @@ test('no-cache, disabled and dynamic-off never revive an old theme', () => {
   assert.equal(makeBootCache({ ...settings, enabled: false }, {}, imageUrl), null);
   assert.equal(makeBootCache({ ...settings, dynamic: false }, {}, imageUrl), null);
   assert.equal(css(settings, { ...cache(settings), version: 0 }), '');
+  assert.equal(css(settings, { ...cache(settings), version: 1 }), '', 'old extraction results cannot flash before the new palette loads');
+  assert.equal(css(settings, { ...cache(settings), version: 2 }), '', 'old scrim-era colors cannot flash before the new palette loads');
   assert.equal(css({ ...settings, paletteMode: 'vibrant' }, cache(settings)), '');
   assert.equal(css({ ...settings, strength: 100 }, cache(settings)), '');
   // A first successful refresh can cache the default palette before any user
@@ -82,11 +84,11 @@ for (const mode of PALETTE_MODES) test(`cached ${mode} palette contains six opaq
   }
 });
 
-test('wallpaper startup uses the same 10–100% curve and independent light/dark reading veil', () => {
+test('wallpaper startup uses the same 10–100% curve without a fixed scrim', () => {
   for (const strength of [10, 28, 100]) for (const mode of ['light', 'dark']) {
     const prefs = { ...settings, mode, strength }, stored = cache(prefs), output = css(prefs, stored);
     assert.ok(output.includes(`, ${backgroundAlpha(strength)})`));
-    assert.ok(output.includes(mode === 'light' ? `rgba(255, 255, 255, ${WALLPAPER_VEIL.light})` : `rgba(0, 0, 0, ${WALLPAPER_VEIL.dark})`));
+    assert.doesNotMatch(output, /rgba\(255, 255, 255, 0\.56\)|rgba\(0, 0, 0, 0\.62\)/);
     assert.ok(output.includes(`url("${imageUrl}")`));
     assert.match(output, /background-color:rgb\(/); // A failed image remains legible.
     assert.doesNotMatch(output, /--dsh-boot-arc|animation|mask|(?:^|[;{])(?:display|opacity):/);
@@ -96,7 +98,7 @@ test('wallpaper startup uses the same 10–100% curve and independent light/dark
   for (const strength of [-1, 101, NaN, Infinity, '28']) assert.equal(css({ ...settings, strength }), '');
 });
 
-test('every startup filter mode paints only a solid fallback beneath its fixed image and reading veil', () => {
+test('every startup filter mode paints only a solid fallback beneath its image and visibility tint', () => {
   for (const filterMode of wallpaperFilters.modes) {
     const prefs = { ...settings, filterMode }, output = css(prefs);
     const container = output.slice(0, output.indexOf('}') + 1);

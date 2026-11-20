@@ -10,11 +10,12 @@ Daily Bing wallpapers, image-derived theme colours, and automatic light/dark app
 
 - China and international (US) Bing sources, with separate caches and no automatic cross-source fallback.
 - Ten colour styles: M3 Content, M3 Tonal Spot, M3 Fruit Salad, M3 Rainbow, M3 Monochrome, Vibrant, Faithful, Soft, Dysfunctional, and Muted.
+- M3 styles use a ranked image seed; the five custom styles cluster multiple image colours and select candidates by style. Their colour generation is adapted from Noctalia, with browser sampling, candidate selection, and DSH readability adjustments, so results are not pixel-identical.
 - Clickable palette cards show light and dark previews separated by a diagonal line.
-- Wallpaper visibility from 10% to 100%, with a reading overlay. Icons and semantic status colours are not recoloured.
-- Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength and a live preview. Filters affect only the wallpaper; theme colours still come from the original image.
+- Wallpaper visibility from 10% to 100%, without a fixed reading overlay. Icons and semantic status colours are not recoloured.
+- Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength. Filters update the background live; the settings preview and theme extraction use the original image.
 - Main pages, sidebars and the startup screen use dedicated wallpaper filter layers over a solid-colour fallback. Page content, document images and charts are not filtered.
-- Independent left/right sidebar backgrounds: wallpaper or solid theme colour, a filter that follows the main background or uses its own strength, and an option to match the toolbar background. Wallpaper shares viewport coordinates with the centre through resizing, splits and drawer animations. Both solid mode and the theme-colour overlay use the sidebar colour shown in the palette cards; overlay opacity is independent of main wallpaper visibility and can be disabled while retaining the reading veil. Desktop and mobile share the same settings.
+- Independent left/right sidebar backgrounds: wallpaper or solid theme colour, wallpaper visibility and filters that follow the main background or can be customized, and an option to match the toolbar background. Sidebar settings start collapsed when visibility follows the main background. Wallpaper shares viewport coordinates with the centre through resizing, splits and drawer animations. Both solid mode and the optional theme-colour overlay use the sidebar colour shown in the palette cards; the overlay remains independent of wallpaper visibility. Desktop and mobile share the same settings.
 - Scheduled, system, follow-DSH, or fixed light/dark appearance. The default schedule is 07:00–19:00 in the browser’s local time zone.
 - Image title, date, source, and copyright overlaid at the bottom of the photo; refresh icon in the top-right corner.
 - Automatic update checks, keeping the previous image on failure; Chinese and English UI.

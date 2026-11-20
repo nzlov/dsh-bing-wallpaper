@@ -52,7 +52,7 @@ test('rapid main and sidebar slider changes converge across pages without storag
       }
       return value;
     },
-    useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    useState: initial => [initial(), () => {}], useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
   };
   for (const owner of ['a', 'b']) {
     active = owner;

@@ -4,14 +4,14 @@ import { readFile } from 'node:fs/promises';
 import { Script } from 'node:vm';
 import { transform } from 'esbuild';
 import { createWallpaperFilters, wallpaperFilters as filters } from '../wallpaper-filter.js';
-import { DEFAULTS, normalizeSettings, makeTokens, wallpaperShade } from '../palette.js';
+import { DEFAULTS, normalizeSettings, makeTokens } from '../palette.js';
 import { bootThemeCSS, bootThemeInjection, makeBootCache } from '../boot-theme.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const photo = 'url("blob:https://example.test/test-image")';
 const cachedUrl = '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg';
-const render = (mode, amount, scheme = 'light') => filters.css({
-  selector: 'html', image: photo, overlays: [wallpaperShade(scheme)], settings: { filterMode: mode, filterAmounts: { [mode]: amount } }, fixed: true,
+const render = (mode, amount) => filters.css({
+  selector: 'html', image: photo, overlays: [], settings: { filterMode: mode, filterAmounts: { [mode]: amount } }, fixed: true,
 });
 
 test('legacy preferences default to no filter; mode amounts are independently retained and bounded', () => {
@@ -36,11 +36,11 @@ test('legacy preferences default to no filter; mode amounts are independently re
   assert.equal(filters.normalize({ filterMode: 'blur', filterAmounts: { blur: Infinity } }).filterAmounts.blur, 12);
 });
 
-test('effects are bounded photo-only CSS; tint and reading veils paint above the image', async () => {
+test('effects are bounded photo-only CSS; chosen tints paint above the image', async () => {
   for (const css of [render('none'), ...filters.modes.slice(1).map(mode => render(mode, 0)), render('bad);display:none', 15)]) {
     assert.match(css, /html::before\{[^}]+filter:none/);
     assert.ok(css.includes(photo));
-    assert.ok(css.includes(wallpaperShade('light')));
+    assert.match(css, /html::after\{[^}]*background-image:none/);
   }
   assert.equal(filters.css({ selector: 'html', image: '', overlays: [], settings: {} }), '');
   for (const [mode, amount, pattern] of [
@@ -50,17 +50,15 @@ test('effects are bounded photo-only CSS; tint and reading veils paint above the
     ['grayscale', 83, /filter:grayscale\(83%\)/],
     ['dim', 42, /filter:brightness\(58%\)/],
   ]) {
-    for (const scheme of ['light', 'dark']) {
-      const css = render(mode, amount, scheme);
-      assert.match(css, pattern, mode);
-      const [before, after] = css.split('html::after');
-      assert.match(before, /^html::before\{content:"";position:fixed;[^}]*z-index:-2;pointer-events:none/);
-      assert.ok(before.includes(photo) && !before.includes(wallpaperShade(scheme)));
-      assert.match(after, /z-index:-1;pointer-events:none;background-image:linear-gradient/);
-      assert.ok(after.includes(wallpaperShade(scheme)) && !after.includes('filter:'));
-      const compiled = await transform(css, { loader: 'css' });
-      assert.deepEqual(compiled.warnings, []);
-    }
+    const css = render(mode, amount);
+    assert.match(css, pattern, mode);
+    const [before, after] = css.split('html::after');
+    assert.match(before, /^html::before\{content:"";position:fixed;[^}]*z-index:-2;pointer-events:none/);
+    assert.ok(before.includes(photo));
+    assert.match(after, /z-index:-1;pointer-events:none;background-image:(?:linear-gradient|none)/);
+    assert.ok(!after.includes('filter:'));
+    const compiled = await transform(css, { loader: 'css' });
+    assert.deepEqual(compiled.warnings, []);
   }
   assert.doesNotMatch(render('blur', '32);display:none'), /display:none/);
 });
@@ -80,7 +78,7 @@ test('startup keeps the same stored filter for both Follow themes and ignores un
   assert.match(bootThemeCSS({ ...settings, filterMode: 'none' }, cache, day, false), /\[data-dsh-boot\]::before\{[^}]+filter:none/);
 });
 
-test('both locales name each filter and adjustment; client preview shares the photo effect', async () => {
+test('both locales name each filter and adjustment; settings preview keeps the original image', async () => {
   const source = await read('client-main.js');
   for (const lang of ['en', 'zh']) {
     const dictionary = JSON.parse(await read(`locale/${lang}.json`));
@@ -99,12 +97,12 @@ test('both locales name each filter and adjustment; client preview shares the ph
   assert.match(source, /filterOption && row\(filterLabel, h\('input',[^\n]+type: 'range', min: 0, max: filterOption\.max/);
   assert.match(source, /aria-valuetext[^\n]+filterPixels/);
   assert.match(source, /if \(filterOnly\) \{ settings = next; if \(persist\) save\(\); publish\(\{ settings \}\); return; \}/);
-  assert.match(source, /wallpaperFilters\.effect\(prefs\)/);
-  assert.match(source, /className: 'bdt-preview-image'[\s\S]*filter: look\?\.filter/);
-  assert.match(source, /className: 'bdt-preview-tint'[^\n]+backgroundColor: look\.tint/);
-  assert.match(source, /extractAccent\(context\.getImageData/);
+  assert.match(source, /className: 'bdt-preview-image', src: s\.url/);
+  assert.doesNotMatch(source, /bdt-preview-tint|filter: look\?\.filter/);
+  assert.match(source, /extractImagePalettes\(context\.getImageData/);
   const manifest = JSON.parse(await read('package.json'));
   assert.ok(manifest.files.includes('wallpaper-filter.js'));
   const client = (await read('client.js')).replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-  for (const token of ['bdt-preview-tint', 'bdt-filter-range', 'Background filter', '背景滤镜', '模糊（Blur）', 'Frosted glass']) assert.ok(client.includes(token), token);
+  for (const token of ['bdt-preview-image', 'bdt-filter-range', 'Background filter', '背景滤镜', '模糊（Blur）', 'Frosted glass']) assert.ok(client.includes(token), token);
+  assert.ok(!client.includes('bdt-preview-tint'));
 });

@@ -16,14 +16,14 @@ export function makeBootCache(settings, tokens, imageUrl) {
   for (const scheme of ['light', 'dark']) {
     colors[scheme] = Object.fromEntries(Object.entries(keys).map(([role, key]) => [role, tokens[key][scheme]]));
   }
-  return { version: 1, market: settings.market || 'zh-CN', paletteMode: settings.paletteMode, strength: settings.strength, colors, imageUrl };
+  return { version: 3, market: settings.market || 'zh-CN', paletteMode: settings.paletteMode, strength: settings.strength, colors, imageUrl };
 }
 
 // This pure function is also embedded verbatim in the Host's early script.
 // All persisted values are untrusted: no arbitrary CSS or URL interpolation.
 export function bootThemeCSS(settings, cache, now, systemDark, followDark, renderFilter = wallpaperFilters.css) {
   settings ??= { enabled: true, dynamic: true, paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28 };
-  if (!settings || settings.enabled !== true || settings.dynamic !== true || !cache || cache.version !== 1
+  if (!settings || settings.enabled !== true || settings.dynamic !== true || !cache || cache.version !== 3
       || cache.paletteMode !== settings.paletteMode || cache.strength !== settings.strength
       || !['zh-CN', 'en-US'].includes(settings.market ?? 'zh-CN') || (cache.market ?? 'zh-CN') !== (settings.market ?? 'zh-CN')
       || !Number.isFinite(settings.strength) || settings.strength < 10 || settings.strength > 100) return '';
@@ -60,8 +60,7 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark, rende
   const imageMatch = typeof url === 'string' && url.length <= 300
     && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);
   const photo = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US') ? `url("${url}")` : '';
-  const shade = dark ? 'rgba(0, 0, 0, 0.62)' : 'rgba(255, 255, 255, 0.56)';
-  const filter = renderFilter({ selector: '[data-dsh-boot]', image: photo, overlays: [matte, shade], settings, fixed: true });
+  const filter = renderFilter({ selector: '[data-dsh-boot]', image: photo, overlays: [matte], settings, fixed: true });
   return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:none!important;isolation:isolate;color-scheme:${dark ? 'dark' : 'light'}}${filter}`;
 }
 

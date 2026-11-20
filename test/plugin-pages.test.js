@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { transform } from 'esbuild';
 import { pluginPageCSS } from '../compatibility.js';
-import { contrast, makeTokens, PALETTE_MODES, WALLPAPER_VEIL } from '../palette.js';
+import { contrast, makeTokens, PALETTE_MODES } from '../palette.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -34,7 +34,7 @@ test('wallpaper integration targets page canvases and leaves overlays and semant
   }
 });
 
-test('themed card, ledger and template foreground/background pairs retain contrast', () => {
+test('themed card and template foreground/background pairs retain contrast', () => {
   const rgb = value => value.match(/\d+/g).map(Number);
   const mix = (base, top, opacity) => base.map((v, i) => v * (1 - opacity) + top[i] * opacity);
   for (const mode of PALETTE_MODES) for (const accent of [[190, 38, 44], [20, 95, 210], [128, 255, 255], [92, 116, 132]]) {
@@ -43,15 +43,8 @@ test('themed card, ledger and template foreground/background pairs retain contra
       const get = role => rgb(tokens[`--dsw-alias-${role}`][scheme]);
       const surface = get('bg-layer-1');
       const card = mix(surface, get('brand-primary'), .07);
-      const mask = scheme === 'dark' ? 0 : 255;
-      // At 100% wallpaper visibility the two extremes of the shielded photo
-      // bound the ledger's background in every RGB channel.
-      const ledger = [0, 255].map(photo => {
-        const covered = photo * (1 - WALLPAPER_VEIL[scheme]) + mask * WALLPAPER_VEIL[scheme];
-        return mix([covered, covered, covered], surface, .4);
-      });
       for (const role of ['label-primary', 'label-secondary', 'label-tertiary']) {
-        for (const fill of [card, ...ledger, get('bg-layer-2'), get('interactive-bg-active'), get('interactive-bg-hover')]) {
+        for (const fill of [card, get('bg-layer-2'), get('interactive-bg-active'), get('interactive-bg-hover')]) {
           assert.ok(contrast(get(role), fill) >= 4.5, `${mode}/${accent}/${scheme}/${role}`);
         }
       }
