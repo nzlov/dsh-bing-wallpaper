@@ -16,7 +16,7 @@ export function makeBootCache(settings, tokens, imageUrl) {
   for (const scheme of ['light', 'dark']) {
     colors[scheme] = Object.fromEntries(Object.entries(keys).map(([role, key]) => [role, tokens[key][scheme]]));
   }
-  return { version: 3, market: settings.market || 'zh-CN', paletteMode: settings.paletteMode, strength: settings.strength, colors, imageUrl };
+  return { version: 3, market: settings.market || 'zh-CN', resolution: settings.resolution || '1080p', paletteMode: settings.paletteMode, strength: settings.strength, colors, imageUrl };
 }
 
 // This pure function is also embedded verbatim in the Host's early script.
@@ -26,6 +26,7 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark, rende
   if (!settings || settings.enabled !== true || settings.dynamic !== true || !cache || cache.version !== 3
       || cache.paletteMode !== settings.paletteMode || cache.strength !== settings.strength
       || !['zh-CN', 'en-US'].includes(settings.market ?? 'zh-CN') || (cache.market ?? 'zh-CN') !== (settings.market ?? 'zh-CN')
+      || !['1080p', '2k', '4k'].includes(settings.resolution ?? '1080p') || (cache.resolution ?? '1080p') !== (settings.resolution ?? '1080p')
       || !Number.isFinite(settings.strength) || settings.strength < 10 || settings.strength > 100) return '';
   // Follow stays selector-driven: structured row activation order may change
   // after a Host plugin reload, and the native body selector is authoritative.
@@ -57,9 +58,11 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark, rende
   const url = cache.imageUrl;
   const alpha = (100 - Math.round(settings.strength)) / 100;
   const matte = colors.background.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  const resolution = settings.resolution ?? '1080p';
   const imageMatch = typeof url === 'string' && url.length <= 300
-    && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);
-  const photo = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US') ? `url("${url}")` : '';
+    && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?(?:resolution=(2k|4k)&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);
+  const photo = imageMatch && Boolean(imageMatch[1]) === (settings.market === 'en-US')
+    && (imageMatch[2] || '1080p') === resolution ? `url("${url}")` : '';
   const filter = renderFilter({ selector: '[data-dsh-boot]', image: photo, overlays: [matte], settings, fixed: true });
   return `[data-dsh-boot]{--dsw-alias-bg-base:${colors.background};--dsw-alias-label-primary:${colors.primary};--dsw-alias-label-secondary:${colors.secondary};--dsw-alias-label-tertiary:${colors.tertiary};--dsw-alias-border-l2:${colors.border};--dsw-alias-brand-primary:${colors.brand};background-color:${colors.background}!important;background-image:none!important;isolation:isolate;color-scheme:${dark ? 'dark' : 'light'}}${filter}`;
 }

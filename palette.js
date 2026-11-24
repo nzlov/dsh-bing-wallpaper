@@ -7,21 +7,24 @@ import { wallpaperFilters } from './wallpaper-filter.js';
 import { normalizeWeather } from './weather.js';
 import { normalizeSidebar } from './sidebar-background.js';
 import { DEFAULT_STRENGTH, normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
+import { normalizeParallax } from './wallpaper-parallax.js';
 
 export { extractImagePalettes } from './image-palette.js';
 export { normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
 
 // Pure image-colour and scheduling logic; shared by browser bundle and tests.
 export const PALETTE_MODES = Object.freeze(['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']);
+export const RESOLUTIONS = Object.freeze(['1080p', '2k', '4k']);
 const { filterMode, filterAmounts } = wallpaperFilters.normalize();
+const { parallaxStrength } = normalizeParallax();
 const sidebarDefaults = () => {
   const sidebar = normalizeSidebar();
   return Object.freeze({ ...sidebar, filterAmounts: Object.freeze(sidebar.filterAmounts) });
 };
 export const DEFAULTS = Object.freeze({
-  enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: DEFAULT_STRENGTH,
+  enabled: true, dynamic: true, market: 'zh-CN', resolution: '1080p', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: DEFAULT_STRENGTH,
   weather: Object.freeze(normalizeWeather()),
-  filterMode, filterAmounts: Object.freeze(filterAmounts), leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
+  filterMode, filterAmounts: Object.freeze(filterAmounts), parallaxStrength, leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
 });
 export function normalizeSettings(input = {}) {
   if (!input || typeof input !== 'object') input = {};
@@ -30,6 +33,7 @@ export function normalizeSettings(input = {}) {
     enabled: typeof input.enabled === 'boolean' ? input.enabled : true,
     dynamic: typeof input.dynamic === 'boolean' ? input.dynamic : true,
     market: ['zh-CN', 'en-US'].includes(input.market) ? input.market : DEFAULTS.market,
+    resolution: RESOLUTIONS.includes(input.resolution) ? input.resolution : DEFAULTS.resolution,
     paletteMode: PALETTE_MODES.includes(input.paletteMode) ? input.paletteMode : DEFAULTS.paletteMode,
     mode: ['follow', 'schedule', 'system', 'light', 'dark'].includes(input.mode) ? input.mode : 'schedule',
     day: time(input.day) ? input.day : DEFAULTS.day,
@@ -37,6 +41,7 @@ export function normalizeSettings(input = {}) {
     strength: normalizeStrength(input.strength),
     weather: normalizeWeather(input.weather),
     ...wallpaperFilters.normalize(input),
+    ...normalizeParallax(input),
     leftSidebar: normalizeSidebar(input.leftSidebar),
     rightSidebar: normalizeSidebar(input.rightSidebar),
   };

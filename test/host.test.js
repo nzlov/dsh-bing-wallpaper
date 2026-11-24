@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createBingSource, DAILY_PATH, IMAGE_PATH, isBingImageId } from '../bing-source.js'
+import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, isBingImageId } from '../bing-source.js'
+import { encodeDepthPayload } from '../depth-service.js'
 import { apply, createResources, inject } from '../index.js'
 
 const ID = 'OHR.LakeBled_ZH-CN1234567890_1920x1080.jpg'
@@ -405,7 +406,7 @@ test('apply uses one owned effect, unregisters both routes and aborts both marke
   }
   apply(ctx)
   assert.equal(effects, 1)
-  assert.deepEqual([...registered.keys()], [DAILY_PATH, IMAGE_PATH])
+  assert.deepEqual([...registered.keys()], [DAILY_PATH, IMAGE_PATH, DEPTH_PATH])
   const results = MARKETS.map(market => registered.get(DAILY_PATH).resource(
     request(`${DAILY_PATH}?market=${market}`, { headers: { host: '127.0.0.1:3001' } }),
   ))
@@ -416,16 +417,79 @@ test('apply uses one owned effect, unregisters both routes and aborts both marke
   for (const result of results) assert.equal((await result).status, 502)
 })
 
-test('partial route acquisition rolls back the first registration', () => {
-  let removed = false, count = 0
+test('partial route acquisition rolls back previous registrations', () => {
+  let removed = 0, count = 0
   assert.throws(() => apply({
     on() {}, effect(fn) { fn() }, connection: {},
     webServer: { register() {
-      if (++count === 2) throw new Error('duplicate image route')
-      return () => { removed = true }
+      if (++count === 3) throw new Error('duplicate depth route')
+      return () => { removed++ }
     } },
-  }), /duplicate image route/)
-  assert.equal(removed, true)
+  }), /duplicate depth route/)
+  assert.equal(removed, 2)
+})
+
+test('depth route enforces owner auth, validates queries, coalesces inference and supports GET/HEAD', async () => {
+  const { source } = fixture()
+  const payload = encodeDepthPayload(new Uint8Array(16).fill(180), 4, 4)
+  const gate = deferred()
+  let runs = 0
+  let pending
+  const depth = {
+    available: true,
+    estimate(bytes) {
+      if (!pending) {
+        runs++
+        assert.deepEqual(bytes, JPEG)
+        pending = gate.promise.then(() => payload)
+      }
+      return pending
+    },
+  }
+  const api = createResources({ source, depth, admit: () => ({ peer: owner() }) })
+  assert.equal((await api.depth(request(`${DEPTH_PATH}?id=${ID}`))).status, 404)
+  assert.equal((await api.depth(request(`${DEPTH_PATH}?id=bad`))).status, 400)
+  assert.equal((await api.depth(request(`${DEPTH_PATH}?id=${ID}`, { method: 'POST' }))).status, 405)
+
+  const dailyWithDepth = await (await api.daily(request())).json()
+  assert.equal(dailyWithDepth.parallaxAvailable, true)
+  const controller = new AbortController()
+  const cancelled = api.depth(request(`${DEPTH_PATH}?id=${ID}`, { signal: controller.signal }))
+  const active = api.depth(request(`${DEPTH_PATH}?id=${ID}`))
+  controller.abort()
+  assert.equal((await cancelled).status, 408)
+  gate.resolve()
+  const res = await active
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get('content-type'), 'application/octet-stream')
+  assert.equal(res.headers.get('content-length'), String(payload.byteLength))
+  assert.equal(res.headers.get('cross-origin-resource-policy'), 'same-origin')
+  assert.match(res.headers.get('cache-control'), /^private, max-age=86400/)
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), payload)
+
+  const head = await api.depth(request(`${DEPTH_PATH}?id=${ID}`, { method: 'HEAD' }))
+  assert.equal(head.status, 200)
+  assert.equal((await head.arrayBuffer()).byteLength, 0)
+  assert.equal(runs, 1)
+
+  const failingApi = createResources({
+    source,
+    depth: { available: true, async estimate() { throw new Error('model offline') } },
+    admit: () => ({ peer: owner() }),
+  })
+  const failed = await failingApi.depth(request(`${DEPTH_PATH}?id=${ID}`))
+  assert.equal(failed.status, 503)
+  assert.equal(failed.headers.get('retry-after'), '60')
+
+  const disabledApi = createResources({
+    source,
+    depth: { available: false, async estimate() { throw new Error('should not run') } },
+    admit: () => ({ peer: owner() }),
+  })
+  const dailyWithoutDepth = await (await disabledApi.daily(request())).json()
+  assert.equal('parallaxAvailable' in dailyWithoutDepth, false)
+  assert.equal((await disabledApi.depth(request(`${DEPTH_PATH}?id=${ID}`))).status, 501)
+  source.dispose()
 })
 
 test('routes forward only allowlisted markets, with domestic defaults and explicit global URLs', async () => {
@@ -447,6 +511,55 @@ test('routes forward only allowlisted markets, with domestic defaults and explic
   }
   assert.equal(dailyCalls.length, 6)
   assert.equal(imageCalls.length, 6)
+})
+
+test('resolutions 1080p, 2k and 4k fetch their exact Bing URLs with isolated caches and strict query validation', async () => {
+  const urls = []
+  const source = createBingSource({
+    fetchImpl: async url => {
+      urls.push(url)
+      if (url.includes('HPImageArchive')) return json(archive())
+      const tag = url.includes('w=2560') ? 2 : url.includes('_UHD.jpg') ? 4 : 1
+      return new Response(new Uint8Array([...JPEG, tag]), { headers: { 'content-type': 'image/jpeg' } })
+    },
+  })
+  const depthPayload = encodeDepthPayload(new Uint8Array(16).fill(120), 4, 4)
+  const api = createResources({
+    source,
+    depth: { available: true, async estimate() { return depthPayload } },
+    admit: () => ({ peer: owner() }),
+  })
+
+  for (const bad of ['resolution=8k', 'resolution=UHD', 'resolution=', 'resolution=2k&resolution=4k']) {
+    assert.equal((await api.daily(request(`${DAILY_PATH}?${bad}`))).status, 400, bad)
+    assert.equal((await api.image(request(`${IMAGE_PATH}?${bad}&id=${ID}`))).status, 400, bad)
+  }
+
+  const d1080 = await (await api.daily(request(`${DAILY_PATH}?market=zh-CN&resolution=1080p`))).json()
+  const d2k = await (await api.daily(request(`${DAILY_PATH}?market=zh-CN&resolution=2k`))).json()
+  const d4k = await (await api.daily(request(`${DAILY_PATH}?market=en-US&resolution=4k`))).json()
+
+  assert.equal(d1080.imageUrl, `${IMAGE_PATH}?id=${ID}`)
+  assert.equal(d1080.resolution, undefined)
+  assert.equal(d2k.imageUrl, `${IMAGE_PATH}?resolution=2k&id=${ID}`)
+  assert.equal(d2k.resolution, '2k')
+  assert.equal(d4k.imageUrl, `${IMAGE_PATH}?market=en-US&resolution=4k&id=${ID}`)
+  assert.equal(d4k.resolution, '4k')
+
+  const uhd = ID.replace('_1920x1080.jpg', '_UHD.jpg')
+  assert.ok(urls.includes(`https://cn.bing.com/th?id=${ID}`))
+  assert.ok(urls.includes(`https://cn.bing.com/th?id=${uhd}&w=2560&h=1440&rs=1&c=4`))
+  assert.ok(urls.includes(`https://www.bing.com/th?id=${uhd}`))
+
+  const b1080 = new Uint8Array(await (await api.image(request(d1080.imageUrl))).arrayBuffer())
+  const b2k = new Uint8Array(await (await api.image(request(d2k.imageUrl))).arrayBuffer())
+  const b4k = new Uint8Array(await (await api.image(request(d4k.imageUrl))).arrayBuffer())
+  assert.equal(b1080.at(-1), 1)
+  assert.equal(b2k.at(-1), 2)
+  assert.equal(b4k.at(-1), 4)
+  assert.equal((await api.image(request(`${IMAGE_PATH}?resolution=4k&id=${ID}`))).status, 404, 'zh-CN 4k not cached')
+  assert.equal((await api.depth(request(`${DEPTH_PATH}?market=en-US&resolution=4k&id=${ID}`))).status, 200)
+  source.dispose()
 })
 
 test('global metadata and bytes use only global upstream and remain inaccessible through domestic image route', async () => {

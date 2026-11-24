@@ -174,4 +174,13 @@ test('startup cache is tied to the selected source and permits only its canonica
   delete legacy.market; delete legacyCache.market;
   assert.equal(css(legacy, legacyCache), css(settings));
   assert.equal(css({ ...settings, market: 'bogus' }, { ...cache(settings), market: 'bogus' }), '');
+
+  const fourK = { ...settings, resolution: '4k' };
+  const fourKUrl = imageUrl.replace('?id=', '?resolution=4k&id=');
+  const fourKCache = makeBootCache(fourK, makeTokens([190, 105, 52], fourK.strength, fourK.paletteMode), fourKUrl);
+  assert.equal(fourKCache.resolution, '4k');
+  assert.ok(css(fourK, fourKCache).includes(`url("${fourKUrl}")`));
+  assert.equal(css(settings, fourKCache), '');
+  assert.equal(css({ ...settings, resolution: '2k' }, fourKCache), '');
+  assert.match(css(fourK, { ...fourKCache, imageUrl }), /background-image:none!important/);
 });

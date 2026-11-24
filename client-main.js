@@ -9,6 +9,7 @@ import { weatherBackdrop } from './weather-backdrop.js';
 import { createWeatherEngine } from './precipitation.js';
 import { FACING_BEARINGS } from './window-light.js';
 import { alignWallpaper } from './wallpaper-alignment.js';
+import { mountParallaxWallpaper, depthUrlFor } from './wallpaper-parallax.js';
 import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './palette-preview.js';
 
 const weatherChoices = ['off', 'location', ...WEATHER_EFFECTS];
@@ -52,7 +53,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       function restoreTheme() { appearance.restore(); }
       function syncMode() { appearance.sync(settings); }
       function syncTokens() {
-        if (!settings.enabled || !settings.dynamic || (state.meta && state.meta.market !== settings.market)) {
+        if (!settings.enabled || !settings.dynamic || (state.meta && state.meta.market !== settings.market) || (state.meta && (state.meta.resolution || '1080p') !== settings.resolution)) {
           try { localStorage.removeItem(BOOT_CACHE_KEY); } catch { /* Best-effort startup cache only. */ }
         }
         if (!settings.enabled || !state.url) { tokenDisposer?.(); tokenDisposer = undefined; return; }
@@ -61,14 +62,14 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         const previous = tokenDisposer;
         tokenDisposer = ctx.theme.overrideTokens(SOURCE, tokens);
         previous?.();
-        if (settings.dynamic && state.meta?.market === settings.market) {
+        if (settings.dynamic && state.meta?.market === settings.market && (state.meta?.resolution || '1080p') === settings.resolution) {
           try { localStorage.setItem(BOOT_CACHE_KEY, JSON.stringify(makeBootCache(settings, tokens, state.meta?.imageUrl))); }
           catch { /* Palette persistence must not break wallpaper or theme application. */ }
         }
       }
       function update(patch, persist = true) {
         const next = core.normalizeSettings({ ...settings, ...patch });
-        const backgroundOnly = Object.keys(next).every(key => ['filterMode', 'filterAmounts', 'leftSidebar', 'rightSidebar', 'weather'].includes(key) || next[key] === settings[key]);
+        const backgroundOnly = Object.keys(next).every(key => ['filterMode', 'filterAmounts', 'parallaxStrength', 'leftSidebar', 'rightSidebar', 'weather'].includes(key) || next[key] === settings[key]);
         if (!backgroundOnly && next.day === next.night) { publish({ issue: 'sameTime' }); return; }
         if (JSON.stringify(next) === JSON.stringify(settings)) return;
         const weatherChanged = next.enabled !== settings.enabled || JSON.stringify(next.weather) !== JSON.stringify(settings.weather);
@@ -78,7 +79,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           if (weatherChanged) void weather.sync(settings);
           return;
         }
-        const wasEnabled = settings.enabled, sourceChanged = next.market !== settings.market;
+        const wasEnabled = settings.enabled, sourceChanged = next.market !== settings.market || next.resolution !== settings.resolution;
         if (sourceChanged) {
           // Invalidate even a request still decoding: a slow old source must not
           // overwrite a newer choice. Keep its displayed photo until success.
@@ -112,22 +113,24 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       }
       async function refresh() {
         if (!alive || !settings.enabled || state.busy) return;
-        const current = ++generation, market = settings.market;
+        const current = ++generation, market = settings.market, resolution = settings.resolution;
         const requestController = new AbortController(); controller = requestController;
         const signal = requestController.signal, timeout = setTimeout(() => requestController.abort(), 30000);
         publish({ busy: true, issue: '' }); lastCheck = Date.now();
         let decoded;
         try {
-          const response = await fetch(`/bing-daily-theme/api/daily?market=${market}`, { signal, credentials: 'same-origin', cache: 'no-store' });
+          const response = await fetch(`/bing-daily-theme/api/daily?market=${market}${resolution === '1080p' ? '' : `&resolution=${resolution}`}`, { signal, credentials: 'same-origin', cache: 'no-store' });
           if (!response.ok) throw new Error(`Metadata HTTP ${response.status}`);
           const meta = await response.json();
-          const expectedImage = market === 'en-US' ? /^\/bing-daily-theme\/api\/image\?market=en-US&id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/ : /^\/bing-daily-theme\/api\/image\?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/;
-          if (meta.market !== market || typeof meta.imageUrl !== 'string' || meta.imageUrl.length > 300 || !expectedImage.test(meta.imageUrl)) throw new Error('Invalid wallpaper source or URL');
+          const marketPrefix = market === 'en-US' ? 'market=en-US&' : '';
+          const resPrefix = resolution === '1080p' ? '' : `resolution=${resolution}&`;
+          const expectedImage = new RegExp(`^\\/bing-daily-theme\\/api\\/image\\?${marketPrefix}${resPrefix}id=OHR\\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\\.jpg$`);
+          if (meta.market !== market || (meta.resolution || '1080p') !== resolution || typeof meta.imageUrl !== 'string' || meta.imageUrl.length > 300 || !expectedImage.test(meta.imageUrl)) throw new Error('Invalid wallpaper source or URL');
           if (!state.meta || meta.imageUrl !== state.meta.imageUrl || !state.url) {
             const image = await fetch(meta.imageUrl, { signal, credentials: 'same-origin' });
             if (!image.ok) throw new Error(`Image HTTP ${image.status}`);
             const blob = await image.blob();
-            if (blob.size > 12 * 1024 * 1024 || !blob.type.startsWith('image/')) throw new Error('Invalid wallpaper image');
+            if (blob.size > 20 * 1024 * 1024 || !blob.type.startsWith('image/')) throw new Error('Invalid wallpaper image');
             decoded = await decode(blob, signal);
           }
           if (!alive || current !== generation) { if (decoded) URL.revokeObjectURL(decoded.url); return; }
@@ -138,7 +141,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           if (oldUrl && oldUrl !== activeUrl) URL.revokeObjectURL(oldUrl);
           lastDay = core.localDate();
         } catch (error) {
-          if (alive && current === generation) publish({ issue: state.url ? state.meta?.market !== market ? 'sourceFailed' : 'fetchFailed' : 'firstFetchFailed' });
+          if (alive && current === generation) publish({ issue: state.url ? (state.meta?.market !== market || (state.meta?.resolution || '1080p') !== resolution) ? 'sourceFailed' : 'fetchFailed' : 'firstFetchFailed' });
         } finally {
           clearTimeout(timeout);
           if (alive && current === generation) publish({ busy: false });
@@ -147,7 +150,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       function tick() {
         syncMode();
         updateWindowLight?.();
-        if (settings.enabled && (core.localDate() !== lastDay || state.meta?.market !== settings.market || ['fetchFailed', 'firstFetchFailed', 'sourceFailed', 'stale'].includes(state.issue) || Date.now() - lastCheck >= 3600000) && Date.now() - lastCheck >= 60000) void refresh();
+        if (settings.enabled && (core.localDate() !== lastDay || state.meta?.market !== settings.market || (state.meta?.resolution || '1080p') !== settings.resolution || ['fetchFailed', 'firstFetchFailed', 'sourceFailed', 'stale'].includes(state.issue) || Date.now() - lastCheck >= 3600000) && Date.now() - lastCheck >= 60000) void refresh();
       }
       ctx.on('theme/change', snapshot => {
         publish({ scheme: snapshot.active.colorScheme });
@@ -169,7 +172,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-weather-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 0}.bdt-weather-summary{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;overflow-wrap:anywhere}
 .bdt-page button{cursor:pointer}.bdt-page button:disabled{cursor:wait;opacity:.55}.bdt-page :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}.bdt-page input{accent-color:var(--dsw-alias-brand-primary)}
 .bdt-page .bdt-wallpaper-select{box-sizing:border-box;width:12rem;min-height:44px}.bdt-filter-range{width:12rem;max-width:100%;min-width:0;min-height:44px}.bdt-control output{flex:0 0 5ch;min-width:5ch;white-space:nowrap;text-align:end;font-variant-numeric:tabular-nums}
-.bdt-page a{color:var(--dsw-alias-brand-primary)}.bdt-muted{color:var(--dsw-alias-label-secondary);font-size:12px}.bdt-swatches{display:flex;gap:8px;margin-top:10px}.bdt-swatch{width:24px;height:24px;border-radius:50%;border:1px solid var(--dsw-alias-border-l2)}
+.bdt-page a{color:var(--dsw-alias-brand-primary)}.bdt-muted{color:var(--dsw-alias-label-secondary);font-size:12px}.bdt-field-hint{margin:-4px 0 12px}.bdt-swatches{display:flex;gap:8px;margin-top:10px}.bdt-swatch{width:24px;height:24px;border-radius:50%;border:1px solid var(--dsw-alias-border-l2)}
 .bdt-photo-caption{position:absolute;inset:auto 0 0;max-height:calc(100% - 64px);overflow:auto;padding:30px 16px 14px;color:var(--dsw-alias-tooltip-label);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--dsw-alias-tooltip-bg) 82%,transparent) 26px,color-mix(in srgb,var(--dsw-alias-tooltip-bg) 90%,transparent));font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .bdt-photo-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}.bdt-photo-heading strong{min-width:0;font-size:14px}.bdt-photo-date{white-space:nowrap}.bdt-photo-details{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:5px}.bdt-page .bdt-photo-caption a{min-width:0;color:inherit;text-underline-offset:2px}.bdt-photo-caption .bdt-swatches{flex-shrink:0;margin:0;gap:6px}.bdt-photo-caption .bdt-swatch{width:20px;height:20px;border-color:color-mix(in srgb,var(--dsw-alias-tooltip-label) 55%,transparent)}
 .bdt-page .bdt-photo-refresh{position:absolute;top:12px;inset-inline-end:12px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;border:1px solid color-mix(in srgb,var(--dsw-alias-tooltip-label) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-tooltip-bg) 86%,transparent);color:var(--dsw-alias-tooltip-label)}.bdt-photo-refresh svg{width:20px;height:20px}.bdt-page .bdt-photo-refresh:disabled{cursor:not-allowed}.bdt-page .bdt-photo-refresh[aria-busy=true]{cursor:wait}.bdt-page .bdt-photo-refresh:focus-visible{outline-color:var(--dsw-alias-tooltip-label);box-shadow:0 0 0 5px var(--dsw-alias-tooltip-bg)}.bdt-photo-refresh[aria-busy=true] svg{animation:bdt-refresh-spin 1s linear infinite}.bdt-photo-status{display:block;margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px}
@@ -192,7 +195,10 @@ ${PALETTE_PREVIEW_CSS}
         React.useEffect(() => { document.getElementById(BOOT_STYLE_ID)?.remove(); }, []);
         const s = useState();
         // DSH's transparent session tiles share the outer window's wallpaper and weather.
-        const condition = s.url && !window.frameElement?.matches('iframe[data-dsh-tile-layout]') ? activeWeatherEffect(s) : null;
+        const tiled = Boolean(window.frameElement?.matches('iframe[data-dsh-tile-layout]'));
+        const condition = s.url && !tiled ? activeWeatherEffect(s) : null;
+        const parallaxAvailable = Boolean(s.meta?.parallaxAvailable);
+        const parallaxActive = Boolean(s.settings.enabled && parallaxAvailable && s.settings.parallaxStrength > 0 && s.url && !tiled);
         const { mode, facing } = s.settings.weather;
         const { windKmh, windDegrees } = (mode === 'location' && s.observation) || {};
         const look = weatherLooks[condition];
@@ -203,6 +209,23 @@ ${PALETTE_PREVIEW_CSS}
           [active, s.settings, colors, s.scheme]);
         const engine = React.useRef(null);
         const refreshCrop = React.useRef(null);
+        const parallaxRef = React.useRef(null);
+        React.useEffect(() => {
+          const depthUrl = depthUrlFor(s.meta?.imageUrl);
+          if (!parallaxActive || !depthUrl) return;
+          const parallaxController = mountParallaxWallpaper({
+            document, window, url: s.url, photo: s.photo, depthUrl,
+            imageWidth: s.imageWidth, imageHeight: s.imageHeight, settings: s.settings,
+          });
+          parallaxRef.current = parallaxController;
+          return () => {
+            if (parallaxRef.current === parallaxController) parallaxRef.current = null;
+            parallaxController.dispose();
+          };
+        }, [parallaxActive, s.url, s.photo, s.meta?.imageUrl]);
+        React.useLayoutEffect(() => {
+          parallaxRef.current?.update({ imageWidth: s.imageWidth, imageHeight: s.imageHeight, settings: s.settings });
+        }, [s.imageWidth, s.imageHeight, s.settings]);
         React.useLayoutEffect(() => {
           if (!active) return;
           const layer = createWeatherPane(document);
@@ -231,18 +254,22 @@ ${PALETTE_PREVIEW_CSS}
         }, [look, s.photo, windKmh, windDegrees, facing]);
         React.useLayoutEffect(() => {
           refreshCrop.current?.();
+          parallaxRef.current?.syncSidebars();
         }, [s.settings.leftSidebar.background, s.settings.rightSidebar.background]);
         React.useLayoutEffect(() => {
           if (!s.settings.enabled || !s.url) return;
           const stopAlignment = alignWallpaper({
             document, window, surfaces: SIDEBAR_SURFACES, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
             mountBackground: surface => mountSidebarBackground(document, surface, active),
-            onLayout: active ? (width, height, surfaces) => {
-              const panes = surfaces.map(([layer, box]) => [layer, box,
-                layer?.parentElement?.closest('[data-sidebar-right-panel]') ? 'right' : 'left']);
-              refreshCrop.current = () => engine.current?.layout(width, height, panes);
-              refreshCrop.current();
-            } : undefined,
+            onLayout: (width, height, surfaces) => {
+              if (active) {
+                const panes = surfaces.map(([layer, box]) => [layer, box,
+                  layer?.parentElement?.closest('[data-sidebar-right-panel]') ? 'right' : 'left']);
+                refreshCrop.current = () => engine.current?.layout(width, height, panes);
+                refreshCrop.current();
+              }
+              parallaxRef.current?.syncSidebars();
+            },
           });
           return () => {
             stopAlignment();
@@ -257,7 +284,10 @@ ${PALETTE_PREVIEW_CSS}
         const mainBase = visibilityMatte.replace(/^rgba\((\d+, \d+, \d+), [^)]+\)$/, 'rgb($1)');
         const { base, matte } = sidebarColors(colors, s.scheme);
         const sidebars = sidebarBackgroundCSS({ settings: s.settings, image, overlays: [], matte, base });
-        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
+        const parallaxCSS = parallaxActive
+          ? 'html[data-bdt-parallax-active]::before{display:none}html[data-bdt-parallax-active] [data-bdt-sidebar-image]{background-image:none!important}[data-bdt-sidebar-image]>[data-bdt-sidebar-canvas]{display:block;width:100%;height:100%;pointer-events:none}'
+          : '';
+        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${parallaxCSS}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
       }
       function WeatherForm({ config, observation, status, row }) {
         const [draft, setDraft] = React.useState(config);
@@ -321,6 +351,9 @@ ${PALETTE_PREVIEW_CSS}
         const checkbox = key => h('input', { id: `bdt-${key}`, type: 'checkbox', checked: prefs[key], onChange: e => update({ [key]: e.target.checked }) });
         const filterOption = wallpaperFilters.options[prefs.filterMode], filterAmount = prefs.filterAmounts[prefs.filterMode];
         const filterLabel = `filterAmount.${prefs.filterMode}`, filterId = `bdt-${filterLabel}`;
+        const parallaxAvailable = Boolean(s.meta?.parallaxAvailable);
+        const parallaxValue = parallaxAvailable ? prefs.parallaxStrength : 0;
+        const parallaxText = parallaxValue > 0 ? `${parallaxValue}%` : t('parallaxOff');
         const sidebarControls = key => {
           const sidebar = prefs[key], option = wallpaperFilters.options[sidebar.filterMode];
           const change = patch => update({ [key]: { ...sidebar, ...patch } });
@@ -369,9 +402,10 @@ ${PALETTE_PREVIEW_CSS}
             h('button', { className: 'bdt-photo-refresh', type: 'button', disabled: s.busy || !prefs.enabled, 'aria-label': t('refresh'), title: t('refresh'), 'aria-busy': s.busy, onClick: () => void refresh() },
               h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
                 h('path', { d: 'M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.36 6.36L3 16M8 16H3v5' })))),
-          h('span', { className: 'bdt-photo-status', role: 'status', 'aria-live': 'polite' }, !prefs.enabled ? t('paused') : s.busy ? t('loading') : s.issue ? t(s.issue) : t(s.meta ? s.meta.market === prefs.market ? 'ready' : 'sourceFailed' : 'waiting')),
+          h('span', { className: 'bdt-photo-status', role: 'status', 'aria-live': 'polite' }, !prefs.enabled ? t('paused') : s.busy ? t('loading') : s.issue ? t(s.issue) : t(s.meta ? (s.meta.resolution || '1080p') !== prefs.resolution ? 'sourceFailed' : s.meta.market === prefs.market ? 'ready' : 'sourceFailed' : 'waiting')),
           h('div', { className: 'bdt-card' }, row('enabled', checkbox('enabled')),
             row('market', h('select', { id: 'bdt-market', value: prefs.market, onChange: e => update({ market: e.target.value }), className: 'bdt-wallpaper-select' }, ...['zh-CN', 'en-US'].map(market => h('option', { key: market, value: market }, t(`market.${market}`))))),
+            row('resolution', h('select', { id: 'bdt-resolution', value: prefs.resolution, disabled: !prefs.enabled, onChange: e => update({ resolution: e.target.value }), className: 'bdt-wallpaper-select' }, ...core.RESOLUTIONS.map(resolution => h('option', { key: resolution, value: resolution }, t(`resolution.${resolution}`))))),
             row('weatherChoice', h('select', { id: 'bdt-weatherChoice', className: 'bdt-wallpaper-select', value: weatherChoice, disabled: !prefs.enabled,
               onChange: e => selectWeather(e.target.value) },
               ...weatherChoices.map(choice => h('option', { key: choice, value: choice },
@@ -388,6 +422,14 @@ ${PALETTE_PREVIEW_CSS}
               value: filterAmount, disabled: !prefs.enabled, 'aria-valuetext': filterOption.unit === 'px' ? `${filterAmount} ${t('filterPixels')}` : `${filterAmount}%`,
               onChange: e => update({ filterAmounts: { ...prefs.filterAmounts, [prefs.filterMode]: Number(e.target.value) } }),
             }), h('output', { htmlFor: filterId }, `${filterAmount}${filterOption.unit}`)),
+            h('div', null,
+              row('parallax', h('input', { id: 'bdt-parallax', className: 'bdt-filter-range', type: 'range', min: 0, max: 100, step: 1,
+                value: parallaxValue, disabled: !prefs.enabled || !parallaxAvailable,
+                'aria-valuetext': parallaxText,
+                'aria-describedby': parallaxAvailable ? undefined : 'bdt-parallaxHint',
+                onChange: e => update({ parallaxStrength: Number(e.target.value) }),
+              }), h('output', { htmlFor: 'bdt-parallax' }, parallaxText)),
+              !parallaxAvailable && h('p', { id: 'bdt-parallaxHint', className: 'bdt-muted bdt-field-hint' }, t('parallaxUnavailable'))),
             row('mode', h('select', { id: 'bdt-mode', value: prefs.mode, onChange: e => update({ mode: e.target.value }) }, ...['schedule', 'system', 'follow', 'light', 'dark'].map(mode => h('option', { key: mode, value: mode }, t(mode))))),
             prefs.mode === 'schedule' && ['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) }))),
             row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`)),

@@ -306,7 +306,11 @@ test('prebuilt artifact ships ten modes without removed help copy', async () => 
   for (const mode of PALETTE_MODES) assert.ok(client.includes(`palette.${mode}`), `${mode} missing from built UI`);
   assert.doesNotMatch(client, /palette\.original|paletteHint\.|bdt-(?:palette|strength)-help|highVisibility|visibilityHint|原始配色|每小时、跨日、页面唤醒/);
   assert.ok(!client.includes("from '@material/"));
-  assert.ok(!manifest.dependencies);
+  assert.ok(!client.includes("from '@huggingface/"));
+  assert.deepEqual(Object.keys(manifest.dependencies || {}), []);
+  assert.deepEqual(Object.keys(manifest.optionalDependencies || {}), []);
+  assert.deepEqual(Object.keys(manifest.peerDependencies || {}), []);
+  assert.ok(manifest.files.includes('depth-service.js'));
   assert.ok(manifest.files.includes('third-party'));
   for (const path of ['THIRD_PARTY_NOTICES.md','third-party/material-color-utilities-LICENSE.txt', 'third-party/noctalia-LICENSE.txt']) assert.ok((await stat(new URL(`../${path}`, import.meta.url))).isFile());
   assert.match(await read('third-party/material-color-utilities-LICENSE.txt'), /Apache License/);
@@ -374,9 +378,11 @@ test('market selection, feedback and refresh labels use matching bilingual dicti
     for (const dictionary of dictionaries) assert.equal(typeof dictionary[key], 'string', key);
   }
   assert.match(source, /row\('market', h\('select', \{ id: 'bdt-market', value: prefs\.market, onChange: e => update\(\{ market: e\.target\.value \}\)/);
+  assert.match(source, /row\('resolution', h\('select', \{ id: 'bdt-resolution', value: prefs\.resolution/);
   assert.match(source, /\['zh-CN', 'en-US'\]\.map\(market => h\('option'[^\n]+t\(`market\.\$\{market\}`\)/);
   for (const dictionary of dictionaries) {
     assert.ok(dictionary['market.zh-CN']); assert.ok(dictionary['market.en-US']); assert.ok(dictionary.sourceFailed);
+    for (const res of ['1080p', '2k', '4k']) assert.ok(dictionary[`resolution.${res}`], res);
   }
   assert.notEqual(dictionaries[0].sourceFailed, dictionaries[1].sourceFailed);
 });

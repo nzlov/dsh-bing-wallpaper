@@ -8,12 +8,13 @@ Daily Bing wallpapers, image-derived theme colours, and automatic light/dark app
 
 ## Features
 
-- China and international (US) Bing sources, with separate caches and no automatic cross-source fallback.
+- China and international (US) Bing sources, with selectable 1080p, 2K (2560×1440) and 4K UHD (3840×2160) resolutions, separate caches and no automatic cross-source fallback.
 - Ten colour styles: M3 Content, M3 Tonal Spot, M3 Fruit Salad, M3 Rainbow, M3 Monochrome, Vibrant, Faithful, Soft, Dysfunctional, and Muted.
 - M3 styles use a ranked image seed; the five custom styles cluster multiple image colours and select candidates by style. Their colour generation is adapted from Noctalia, with browser sampling, candidate selection, and DSH readability adjustments, so results are not pixel-identical.
 - Clickable palette cards show light and dark previews separated by a diagonal line.
 - Linear wallpaper visibility from 10% to 100%, without a fixed reading overlay. Icons and semantic status colours are not recoloured.
 - Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength. Filters update the background live; the settings preview and theme extraction use the original image.
+- Optional 3D depth parallax powered by WebGL (with Catmull-Rom bicubic upscaling, WebGL2 trilinear mipmaps, and smoothed depth warping), shared across the main wallpaper and wallpaper-backed sidebars via a single `0–100%` intensity slider (`0` = off). Stays zero-dependency by default; the slider activates once `@huggingface/transformers` is installed in the DSH profile and pauses under reduced motion.
 - Main pages, sidebars and the startup screen use dedicated wallpaper filter layers over a solid-colour fallback. Page content, document images and charts are not filtered.
 - Independent left/right sidebar backgrounds: wallpaper or solid theme colour, wallpaper visibility and filters that follow the main background or can be customized, and an option to match the toolbar background. Sidebar settings start collapsed when visibility follows the main background. Wallpaper shares viewport coordinates with the centre through resizing, splits and drawer animations. Both solid mode and the optional theme-colour overlay use the sidebar colour shown in the palette cards; the overlay remains independent of wallpaper visibility. Desktop and mobile share the same settings.
 - Scheduled, system, follow-DSH, or fixed light/dark appearance. The default schedule is 07:00–19:00 in the browser’s local time zone.
@@ -38,6 +39,16 @@ npm run build
 Then install this directory in DSH using its absolute path.
 
 Open **Settings → Bing daily wallpaper**. Rebuild after changing source files; follow Plugin Manager’s restart instructions when updating an installed bundle.
+
+### Optional 3D depth parallax
+
+Depth parallax is optional so the plugin stays dependency-free by default. To enable it, install `@huggingface/transformers` in your DSH profile and restart DSH:
+
+```sh
+dsh plugin --profile web add @huggingface/transformers
+```
+
+Once installed, the **Depth parallax** slider (`0–100%`, `0` = off) becomes enabled in settings, and the quantized depth model is downloaded once on demand and cached locally under `~/.cache/dsh-bing-wallpaper`. Without this package, no model is downloaded and the slider stays disabled with a note.
 
 ## Weather effects
 

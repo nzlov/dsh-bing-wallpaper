@@ -1,7 +1,10 @@
 // Intentionally dependency-free: each market uses only its fixed HTTPS Bing origin.
 export const MARKET = 'zh-CN'
+export const RESOLUTION = '1080p'
+export const RESOLUTIONS = Object.freeze(['1080p', '2k', '4k'])
 export const DAILY_PATH = '/bing-daily-theme/api/daily'
 export const IMAGE_PATH = '/bing-daily-theme/api/image'
+export const DEPTH_PATH = '/bing-daily-theme/api/depth'
 const BING_ORIGINS = new Map([
   ['zh-CN', 'https://cn.bing.com'],
   ['en-US', 'https://www.bing.com'],
@@ -9,6 +12,22 @@ const BING_ORIGINS = new Map([
 
 export function isBingMarket(market) {
   return BING_ORIGINS.has(market)
+}
+
+export function isBingResolution(resolution) {
+  return RESOLUTIONS.includes(resolution)
+}
+
+export function upstreamImageUrl(origin, id, resolution = RESOLUTION) {
+  if (resolution === '2k') {
+    const uhdId = id.replace(/_1920x1080\.jpg$/, '_UHD.jpg')
+    return `${origin}/th?id=${encodeURIComponent(uhdId)}&w=2560&h=1440&rs=1&c=4`
+  }
+  if (resolution === '4k') {
+    const uhdId = id.replace(/_1920x1080\.jpg$/, '_UHD.jpg')
+    return `${origin}/th?id=${encodeURIComponent(uhdId)}`
+  }
+  return `${origin}/th?id=${encodeURIComponent(id)}`
 }
 
 function isSafeBingUrl(url) {
@@ -33,7 +52,7 @@ function parseDate(value) {
   return date
 }
 
-function parseArchive(bytes, market) {
+function parseArchive(bytes, market, resolution = RESOLUTION) {
   const origin = BING_ORIGINS.get(market)
   let image
   try { image = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)).images?.[0] } catch {
@@ -56,6 +75,10 @@ function parseArchive(bytes, market) {
       if (isSafeBingUrl(link)) copyrightUrl = link.href
     } catch { /* Never pass an arbitrary or executable URL to the Client. */ }
   }
+  const params = []
+  if (market !== MARKET) params.push(`market=${market}`)
+  if (resolution !== RESOLUTION) params.push(`resolution=${resolution}`)
+  params.push(`id=${encodeURIComponent(id)}`)
   return {
     id,
     metadata: {
@@ -63,8 +86,9 @@ function parseArchive(bytes, market) {
       title: typeof image.title === 'string' ? image.title.slice(0, 300) : '',
       copyright: typeof image.copyright === 'string' ? image.copyright.slice(0, 1000) : '',
       copyrightUrl,
-      imageUrl: `${IMAGE_PATH}?${market === MARKET ? '' : `market=${market}&`}id=${encodeURIComponent(id)}`,
+      imageUrl: `${IMAGE_PATH}?${params.join('&')}`,
       market,
+      ...(resolution !== RESOLUTION ? { resolution } : {}),
     },
   }
 }
@@ -106,19 +130,24 @@ export function createBingSource({
   now = Date.now,
   timeoutMs = 10_000,
   metadataMaxBytes = 128 * 1024,
-  imageMaxBytes = 8 * 1024 * 1024,
+  imageMaxBytes = 16 * 1024 * 1024,
   refreshMs = 60 * 60 * 1000,
   retryMs = 60 * 1000,
 } = {}) {
   let disposed = false
-  // No shared fallback or cache admission across markets, even for identical IDs.
-  const states = new Map([...BING_ORIGINS.keys()].map(market => [market, {
-    snapshot: undefined,
-    nextCheck: 0,
-    stale: false,
-    pending: undefined,
-    images: new Map(),
-  }]))
+  // No shared fallback or cache admission across markets or resolutions.
+  const states = new Map()
+  for (const market of BING_ORIGINS.keys()) {
+    for (const resolution of RESOLUTIONS) {
+      states.set(`${market}:${resolution}`, {
+        snapshot: undefined,
+        nextCheck: 0,
+        stale: false,
+        pending: undefined,
+        images: new Map(),
+      })
+    }
+  }
   const controllers = new Set()
 
   async function download(url, kind) {
@@ -155,15 +184,15 @@ export function createBingSource({
     }
   }
 
-  async function refresh(market, state) {
+  async function refresh(market, resolution, state) {
     const origin = BING_ORIGINS.get(market)
     try {
       const archiveUrl = `${origin}/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=${market}`
-      const record = parseArchive(await download(archiveUrl, 'metadata'), market)
+      const record = parseArchive(await download(archiveUrl, 'metadata'), market, resolution)
       let image = state.images.get(record.id)
       if (!image) {
-        // Archive URLs only admit an ID; never fetch their endpoint or parameters.
-        const url = `${origin}/th?id=${encodeURIComponent(record.id)}`
+        // Archive URLs only admit an ID; construct only fixed Bing resolution URLs.
+        const url = upstreamImageUrl(origin, record.id, resolution)
         image = { bytes: await download(url, 'image'), contentType: 'image/jpeg' }
       }
       if (disposed) throw new BingSourceError('Bing source disposed')
@@ -183,21 +212,22 @@ export function createBingSource({
   }
 
   return {
-    async daily(market = MARKET) {
+    async daily(market = MARKET, resolution = RESOLUTION) {
       if (disposed) throw new BingSourceError('Bing source disposed')
       if (!isBingMarket(market)) throw new BingSourceError('Unsupported Bing market')
-      const state = states.get(market)
+      if (!isBingResolution(resolution)) throw new BingSourceError('Unsupported Bing resolution')
+      const state = states.get(`${market}:${resolution}`)
       if (now() < state.nextCheck) {
         if (!state.snapshot) throw new BingSourceError('Bing temporarily unavailable')
         return { ...state.snapshot, ...(state.stale ? { stale: true } : {}) }
       }
-      if (!state.pending) state.pending = refresh(market, state).finally(() => { state.pending = undefined })
+      if (!state.pending) state.pending = refresh(market, resolution, state).finally(() => { state.pending = undefined })
       return state.pending
     },
-    image(id, market = MARKET) {
-      if (disposed || !isBingMarket(market) || !isBingImageId(id)) return undefined
-      // Even syntactically valid IDs must have been admitted by this market's archive.
-      return states.get(market).images.get(id)
+    image(id, market = MARKET, resolution = RESOLUTION) {
+      if (disposed || !isBingMarket(market) || !isBingResolution(resolution) || !isBingImageId(id)) return undefined
+      // Even syntactically valid IDs must have been admitted for this market and resolution.
+      return states.get(`${market}:${resolution}`).images.get(id)
     },
     dispose() {
       disposed = true
