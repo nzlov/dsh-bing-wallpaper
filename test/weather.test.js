@@ -335,6 +335,35 @@ test('sunlit clear and cloudy skies move their rays in calm air and pause for re
   }
 });
 
+test('clear and cloudy skies switch between solar rays and a silver moon on the same material', t => {
+  for (const effect of ['clear', 'clouds']) {
+    const { object, sheet, uniforms, update } = atmosphereFixture(t, effect);
+    const { glow, lightColor, moonlight, origin, scattering } = uniforms;
+    const material = sheet.material;
+    const sun = orbit(12), moon = orbit(0);
+    update(0, { light: sun });
+    const sunlight = [glow.value, scattering.value, lightColor.value.toArray()];
+    assert.equal(moonlight.value, false);
+    assert.ok(scattering.value > 0);
+
+    update(0, { light: moon });
+    assert.equal(moonlight.value, true);
+    assert.deepEqual(origin.value.toArray(), [moon.x / 100, moon.y / 100]);
+    assert.ok(glow.value > 0 && glow.value < sunlight[0]);
+    assert.equal(scattering.value, 0);
+    const [red, green, blue] = lightColor.value.toArray();
+    assert.ok(red < green && green < blue && blue - red < .15);
+    assert.ok(object.children.includes(sheet));
+    assert.equal(sheet.material, material);
+
+    update(0, { light: { ...moon, intensity: 0 } });
+    assert.equal(glow.value, 0);
+    update(0, { light: sun });
+    assert.equal(moonlight.value, false);
+    assert.deepEqual([glow.value, scattering.value, lightColor.value.toArray()], sunlight);
+  }
+});
+
 test('larger rain streaks and snowflakes fall faster', () => {
   for (const effect of ['lightRain', 'rain', 'heavyRain', 'lightSnow', 'snow', 'heavySnow']) {
     const look = weatherLooks[effect];

@@ -200,6 +200,8 @@ ${PALETTE_PREVIEW_CSS}
         const parallaxAvailable = Boolean(s.meta?.parallaxAvailable);
         const parallaxActive = Boolean(s.settings.enabled && parallaxAvailable && s.settings.parallaxStrength > 0 && s.url && !tiled);
         const { mode, facing } = s.settings.weather;
+        const dayStart = s.settings.mode === 'schedule' ? s.settings.day : null;
+        const nightStart = s.settings.mode === 'schedule' ? s.settings.night : null;
         const { windKmh, windDegrees } = (mode === 'location' && s.observation) || {};
         const look = weatherLooks[condition];
         const active = Boolean(look);
@@ -243,6 +245,9 @@ ${PALETTE_PREVIEW_CSS}
             layer.remove();
           };
         }, [active]);
+        React.useLayoutEffect(() => {
+          engine.current?.updateLight(new Date(), s.scheme, dayStart, nightStart);
+        }, [active, s.scheme, dayStart, nightStart]);
         React.useLayoutEffect(() => {
           engine.current?.setBackdrop(backdrop);
         }, [backdrop]);

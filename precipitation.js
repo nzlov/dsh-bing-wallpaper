@@ -56,8 +56,9 @@ export function createWeatherEngine(document, canvas, look, effect, photo, facin
     wind: 0, crosswind: 0, hasWindDirection: false, reduced: motion.matches,
     light: null, backdrop: null, leftEdge: 0, rightEdge: 0,
   };
-  let lightDate = new Date();
-  state.light = windowLightOrbit(facing, lightDate);
+  let lightDate = new Date(), scheme, dayStart, nightStart;
+  const orbit = () => windowLightOrbit(facing, lightDate, scheme, dayStart, nightStart);
+  state.light = orbit();
   let sidebars = new Map(), scaleX = 1, scaleY = 1;
   let surfaces = [], quality = 0, backingQuality;
   let samples = 0, slowFrames = 0, delayedFrames = 0, renderTime = 0;
@@ -270,7 +271,7 @@ export function createWeatherEngine(document, canvas, look, effect, photo, facin
     state.reduced = motion.matches;
     if (document.visibilityState === 'hidden') return;
     lightDate = new Date();
-    state.light = windowLightOrbit(facing, lightDate);
+    state.light = orbit();
     draw();
     schedule();
   }
@@ -326,15 +327,20 @@ export function createWeatherEngine(document, canvas, look, effect, photo, facin
       state.crosswind = crosswind;
       state.hasWindDirection = hasWindDirection;
       facing = nextFacing;
-      state.light = windowLightOrbit(facing, lightDate);
+      state.light = orbit();
       if (!animated() || previousInterval !== frameInterval()) stop();
       draw();
       schedule();
     },
-    updateLight(date) {
-      if (disposed || Math.floor(date.getTime() / 60000) === Math.floor(lightDate.getTime() / 60000)) return;
+    updateLight(date, nextScheme = scheme, nextDayStart = dayStart, nextNightStart = nightStart) {
+      if (disposed) return;
+      if (nextScheme === scheme && nextDayStart === dayStart && nextNightStart === nightStart &&
+          Math.floor(date.getTime() / 60000) === Math.floor(lightDate.getTime() / 60000)) return;
+      scheme = nextScheme;
+      dayStart = nextDayStart;
+      nightStart = nextNightStart;
       lightDate = date;
-      state.light = windowLightOrbit(facing, date);
+      state.light = orbit();
       if (!animated()) stop();
       draw();
       schedule();

@@ -69,6 +69,7 @@ uniform vec2 viewport, origin, axis;
 uniform vec3 lightColor;
 #ifdef SUNBEAMS
 uniform vec3 beamMotion;
+uniform bool moonlight;
 #endif
 uniform float glow, scattering, offset, ice;
 uniform sampler2D pattern;
@@ -93,25 +94,45 @@ void main() {
   addLayer(color, vec3(mix(0.69, 0.97, density)), 0.49*density);
 #endif
 #ifdef SUNBEAMS
-  float distanceToSun = length(d);
-  float halo = 1.0 - smoothstep(0.015, 0.51, distanceToSun);
-  float core = 1.0 - smoothstep(0.014, 0.082, distanceToSun);
-  float sweep = beamMotion.x;
-  float gap = beamMotion.y;
-  float phase = beamMotion.z;
-  float fan = (0.36 + 0.20 * phase) * lobe(side, -0.79 + sweep, 0.34)
-            + (0.78 - 0.23 * phase) * lobe(side, -0.34 + gap, 0.22)
-            + (0.59 + 0.38 * phase) * lobe(side,  0.08 + sweep, 0.25)
-            + (0.66 - 0.19 * phase) * lobe(side,  0.55 - gap, 0.31);
-  float shafts = fan * smoothstep(0.0, 0.16, along) * (1.0 - smoothstep(0.31, 1.30, distanceToSun));
-  float transmission = 1.0;
+  float distanceToLight = length(d);
+  if (moonlight) {
+    float halo = 1.0 - smoothstep(0.0, 0.24, distanceToLight);
+    float bloom = 1.0 - smoothstep(0.018, 0.075, distanceToLight);
+    float edge = max(fwidth(distanceToLight), 0.001);
+    float disc = 1.0 - smoothstep(0.019 - edge, 0.019 + edge, distanceToLight);
+    float transmission = 1.0;
 #ifdef CLOUDS
-  // Project each ray onto the same moving cloud field that shades the wallpaper.
-  vec2 overhead = origin + rel * (0.22 / max(along, 0.22));
-  float cover = texture2D(pattern, overhead * cloudScale - drift).r;
-  transmission = mix(1.0, 0.24, smoothstep(0.39, 0.68, cover)) * (1.0 - 0.52 * density);
+    transmission = 1.0 - 0.84 * density;
 #endif
-  addLayer(color, lightColor, transmission * (glow * (0.72*halo*halo + 0.40*core) + scattering*shafts));
+    float exposure = glow * transmission;
+    addLayer(color, lightColor, exposure * (0.22 * halo * halo + 0.32 * bloom));
+    if (disc > 0.0) {
+      // Soft, uneven shading gives the moon a recognizable surface inside its halo.
+      float mare = 1.0 - smoothstep(0.26, 1.0, length((d - vec2(-0.005, -0.004)) / vec2(0.010, 0.006)));
+      float basin = 1.0 - smoothstep(0.24, 1.0, length((d - vec2(0.006, 0.005)) / vec2(0.005, 0.008)));
+      vec3 face = mix(vec3(1.0, 0.99, 0.96), lightColor, 0.44) * (1.0 - 0.17 * mare - 0.13 * basin);
+      addLayer(color, face, 1.24 * exposure * disc);
+    }
+  } else {
+    float halo = 1.0 - smoothstep(0.015, 0.51, distanceToLight);
+    float core = 1.0 - smoothstep(0.014, 0.082, distanceToLight);
+    float sweep = beamMotion.x;
+    float gap = beamMotion.y;
+    float phase = beamMotion.z;
+    float fan = (0.36 + 0.20 * phase) * lobe(side, -0.79 + sweep, 0.34)
+              + (0.78 - 0.23 * phase) * lobe(side, -0.34 + gap, 0.22)
+              + (0.59 + 0.38 * phase) * lobe(side,  0.08 + sweep, 0.25)
+              + (0.66 - 0.19 * phase) * lobe(side,  0.55 - gap, 0.31);
+    float shafts = fan * smoothstep(0.0, 0.16, along) * (1.0 - smoothstep(0.31, 1.30, distanceToLight));
+    float transmission = 1.0;
+#ifdef CLOUDS
+    // Project each ray onto the same moving cloud field that shades the wallpaper.
+    vec2 overhead = origin + rel * (0.22 / max(along, 0.22));
+    float cover = texture2D(pattern, overhead * cloudScale - drift).r;
+    transmission = mix(1.0, 0.24, smoothstep(0.39, 0.68, cover)) * (1.0 - 0.52 * density);
+#endif
+    addLayer(color, lightColor, transmission * (glow * (0.72*halo*halo + 0.40*core) + scattering*shafts));
+  }
 #else
   float halo = max(0.0, 1.0 - length(rel / vec2(0.34, 0.40)));
   float fan = 0.40*lobe(side,-0.65,0.15) + 0.83*lobe(side,-0.26,0.18) + lobe(side,0.10,0.17) + 0.54*lobe(side,0.57,0.20);
@@ -151,6 +172,7 @@ export function createAtmosphere(look, effect, photo, renderer) {
   if (sunbeams) {
     defines.SUNBEAMS = 1;
     uniforms.beamMotion = { value: new Vector3(0, 0, 0.5) };
+    uniforms.moonlight = { value: false };
   }
   const material = new ShaderMaterial({vertexShader, fragmentShader, uniforms, defines, transparent: true, depthWrite: false, depthTest: false});
   const sheet = new Mesh(new PlaneGeometry(2, 2), material);
@@ -194,23 +216,30 @@ export function createAtmosphere(look, effect, photo, renderer) {
       uniforms.origin.value.set(light.x / 100, light.y / 100);
       const lean = (50-light.x)/60;
       uniforms.axis.value.set(lean, 1).normalize();
-      uniforms.lightColor.value.set(...(light.day ? [1,(207+34*light.altitude)/255,(151+67*light.altitude)/255] : [.757,.843,1]));
-      uniforms.glow.value = look.light * light.intensity * .50;
-      uniforms.scattering.value = look.scattering * light.intensity * 1.30;
-      if (sunbeams && light.day) {
+      if (sunbeams) {
+        uniforms.moonlight.value = !light.day;
         const exposure = Math.sqrt(light.intensity);
-        uniforms.lightColor.value.set(1, .76 + .14*light.altitude, .49 + .23*light.altitude);
-        uniforms.glow.value = .93 * look.light * exposure;
-        uniforms.scattering.value = (clouds ? .89 : .59) * exposure;
-        if (!reduced) sunlitTime += Math.max(0, time - previous);
-        // Vary the width of the gaps and the balance of neighboring rays while the sun follows the clock.
-        uniforms.beamMotion.value.set(
-          .13*Math.sin(sunlitTime*.51) + .049*Math.sin(sunlitTime*.81),
-          .12*Math.sin(sunlitTime*.43) - .065*Math.sin(sunlitTime*.67),
-          .5 + .5*Math.sin(sunlitTime*.71),
-        );
-      } else if (sunbeams) {
-        uniforms.beamMotion.value.set(0, 0, .5);
+        if (light.day) {
+          uniforms.lightColor.value.set(1, .76 + .14*light.altitude, .49 + .23*light.altitude);
+          uniforms.glow.value = .93 * look.light * exposure;
+          uniforms.scattering.value = (clouds ? .89 : .59) * exposure;
+          if (!reduced) sunlitTime += Math.max(0, time - previous);
+          // Vary the width of the gaps and the balance of neighboring rays while the sun follows the clock.
+          uniforms.beamMotion.value.set(
+            .13*Math.sin(sunlitTime*.51) + .049*Math.sin(sunlitTime*.81),
+            .12*Math.sin(sunlitTime*.43) - .065*Math.sin(sunlitTime*.67),
+            .5 + .5*Math.sin(sunlitTime*.71),
+          );
+        } else {
+          uniforms.lightColor.value.set(.88, .94, 1);
+          uniforms.glow.value = .98 * look.light * exposure;
+          uniforms.scattering.value = 0;
+          uniforms.beamMotion.value.set(0, 0, .5);
+        }
+      } else {
+        uniforms.lightColor.value.set(...(light.day ? [1,(207+34*light.altitude)/255,(151+67*light.altitude)/255] : [.757,.843,1]));
+        uniforms.glow.value = look.light * light.intensity * .50;
+        uniforms.scattering.value = look.scattering * light.intensity * 1.30;
       }
       const speed = hasWindDirection ? crosswind * 3.2 : -(1 + Math.abs(crosswind) * 2.2);
       if (!reduced) uniforms.offset.value += Math.max(0,time-previous) * speed / (fog ? 125 : 74);
