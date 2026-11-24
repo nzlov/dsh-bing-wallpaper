@@ -4,6 +4,7 @@ import {
 } from '@material/material-color-utilities';
 import { makeCustomSchemes } from './custom-palette.js';
 import { wallpaperFilters } from './wallpaper-filter.js';
+import { normalizeWeather } from './weather.js';
 import { normalizeSidebar } from './sidebar-background.js';
 import { DEFAULT_STRENGTH, normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
 
@@ -19,6 +20,7 @@ const sidebarDefaults = () => {
 };
 export const DEFAULTS = Object.freeze({
   enabled: true, dynamic: true, market: 'zh-CN', paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: DEFAULT_STRENGTH,
+  weather: Object.freeze(normalizeWeather()),
   filterMode, filterAmounts: Object.freeze(filterAmounts), leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
 });
 export function normalizeSettings(input = {}) {
@@ -33,6 +35,7 @@ export function normalizeSettings(input = {}) {
     day: time(input.day) ? input.day : DEFAULTS.day,
     night: time(input.night) ? input.night : DEFAULTS.night,
     strength: normalizeStrength(input.strength),
+    weather: normalizeWeather(input.weather),
     ...wallpaperFilters.normalize(input),
     leftSidebar: normalizeSidebar(input.leftSidebar),
     rightSidebar: normalizeSidebar(input.rightSidebar),

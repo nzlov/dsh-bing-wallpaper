@@ -1,10 +1,25 @@
 // Bundled by scripts/build.mjs. No runtime imports except the shared React instance.
 import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from './boot-theme.js';
-import { MARKETPLACE_THEME_CSS, pluginPageCSS } from './compatibility.js';
+import { MARKETPLACE_THEME_CSS, SHELL_WALLPAPER_CSS, pluginPageCSS } from './compatibility.js';
 import { wallpaperFilters } from './wallpaper-filter.js';
 import { sidebarBackgroundCSS, sidebarColors, mountSidebarBackground, SIDEBAR_SURFACES } from './sidebar-background.js';
+import { createWeatherController, customEndpoint, WEATHER_PROVIDERS } from './weather.js';
+import { createWeatherPane, PRECIPITATION_CANVAS, WEATHER_EFFECTS, WEATHER_LAYOUT_CSS, weatherLooks } from './weather-effects.js';
+import { weatherBackdrop } from './weather-backdrop.js';
+import { createWeatherEngine } from './precipitation.js';
+import { FACING_BEARINGS } from './window-light.js';
 import { alignWallpaper } from './wallpaper-alignment.js';
 import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './palette-preview.js';
+
+const weatherChoices = ['off', 'location', ...WEATHER_EFFECTS];
+
+function activeWeatherEffect({ settings, observation }) {
+  if (!settings.enabled) return null;
+  const { mode, effect } = settings.weather;
+  if (mode === 'fixed') return effect;
+  return mode === 'location' ? observation?.effect ?? null : null;
+}
+
 export function createPlugin(React, core, dictionaries, createAppearanceController) {
   const h = React.createElement, NS = 'bing-daily-theme', SOURCE = '@nzlov/dsh-bing-wallpaper';
   const KEY = PREFERENCES_KEY;
@@ -20,13 +35,14 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       let state = { settings, busy: false, issue: '', meta: null, url: '', accent: [92, 116, 132], scheme: ctx.theme.getTheme().active.colorScheme, storageIssue: false };
       const listeners = new Set();
       const publish = patch => { state = { ...state, ...patch }; listeners.forEach(fn => fn()); };
+      const weather = createWeatherController(publish);
       const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn); };
       const useState = () => React.useSyncExternalStore(subscribe, () => state);
       let alive = true, tokenDisposer, controller, activeUrl = '';
       const appearance = createAppearanceController(ctx.theme, () => {
         settings = { ...settings, mode: 'follow' }; save(); publish({ settings });
       }, core.scheduledScheme);
-      let lastCheck = 0, lastDay = '', generation = 0;
+      let lastCheck = 0, lastDay = '', generation = 0, updateWindowLight;
       function save() {
         let storageIssue = false;
         try { localStorage.setItem(KEY, JSON.stringify(settings)); }
@@ -52,11 +68,16 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       }
       function update(patch, persist = true) {
         const next = core.normalizeSettings({ ...settings, ...patch });
-        const filterOnly = Object.keys(next).every(key => ['filterMode', 'filterAmounts', 'leftSidebar', 'rightSidebar'].includes(key) || next[key] === settings[key]);
-        if (!filterOnly && next.day === next.night) { publish({ issue: 'sameTime' }); return; }
+        const backgroundOnly = Object.keys(next).every(key => ['filterMode', 'filterAmounts', 'leftSidebar', 'rightSidebar', 'weather'].includes(key) || next[key] === settings[key]);
+        if (!backgroundOnly && next.day === next.night) { publish({ issue: 'sameTime' }); return; }
         if (JSON.stringify(next) === JSON.stringify(settings)) return;
-        // Slider changes leave loading/error feedback, theme tokens and fetches alone.
-        if (filterOnly) { settings = next; if (persist) save(); publish({ settings }); return; }
+        const weatherChanged = next.enabled !== settings.enabled || JSON.stringify(next.weather) !== JSON.stringify(settings.weather);
+        // Local background controls can update without reloading the photo or theme.
+        if (backgroundOnly) {
+          settings = next; if (persist) save(); publish({ settings });
+          if (weatherChanged) void weather.sync(settings);
+          return;
+        }
         const wasEnabled = settings.enabled, sourceChanged = next.market !== settings.market;
         if (sourceChanged) {
           // Invalidate even a request still decoding: a slow old source must not
@@ -65,6 +86,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         }
         if (next.mode !== settings.mode || !next.enabled) restoreTheme();
         settings = next; if (persist) save(); publish({ settings, issue: '' }); syncTokens(); syncMode();
+        if (weatherChanged) void weather.sync(settings);
         if (!settings.enabled) { generation++; controller?.abort(); publish({ busy: false }); }
         else if (!wasEnabled || sourceChanged) void refresh();
       }
@@ -84,7 +106,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           if (!context) throw new Error('Canvas unavailable');
           context.drawImage(image, 0, 0, 112, 112);
           const accent = core.extractImagePalettes(context.getImageData(0, 0, 112, 112).data);
-          return { url, accent, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight };
+          return { url, accent, photo: image, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight };
         } catch (error) { URL.revokeObjectURL(url); throw error; }
         finally { if (onAbort) signal.removeEventListener('abort', onAbort); }
       }
@@ -124,6 +146,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       }
       function tick() {
         syncMode();
+        updateWindowLight?.();
         if (settings.enabled && (core.localDate() !== lastDay || state.meta?.market !== settings.market || ['fetchFailed', 'firstFetchFailed', 'sourceFailed', 'stale'].includes(state.issue) || Date.now() - lastCheck >= 3600000) && Date.now() - lastCheck >= 60000) void refresh();
       }
       ctx.on('theme/change', snapshot => {
@@ -139,8 +162,11 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-photo{position:relative;margin:0;overflow:hidden;border-radius:12px;background:var(--dsw-alias-bg-layer-2)}.bdt-preview{position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;min-height:240px;background:var(--dsw-alias-bg-layer-2)}
 .bdt-preview-image{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;max-width:none}
 .bdt-card{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);margin:16px 0}
-.bdt-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;flex-wrap:wrap}.bdt-row+ .bdt-row{border-top:1px solid var(--dsw-alias-border-l1)}
-.bdt-control{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bdt-page select,.bdt-page input[type=time],.bdt-page button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;min-height:36px;max-width:100%}
+.bdt-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;flex-wrap:wrap}
+:is(.bdt-card,.bdt-weather-form)>:not(:last-child),.bdt-sidebar-group[open]>summary,.bdt-sidebar-group .bdt-row:not(:last-child){border-bottom:1px solid var(--dsw-alias-border-l1)}
+.bdt-control{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bdt-page select,.bdt-page input:is([type=time],[type=text],[type=url],[type=number]),.bdt-page button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;min-height:36px;max-width:100%}
+.bdt-weather-form input{box-sizing:border-box;width:16rem}.bdt-weather-form input[type=number]{width:8rem}.bdt-weather-form .bdt-control{max-width:100%}
+.bdt-weather-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 0}.bdt-weather-summary{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;overflow-wrap:anywhere}
 .bdt-page button{cursor:pointer}.bdt-page button:disabled{cursor:wait;opacity:.55}.bdt-page :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}.bdt-page input{accent-color:var(--dsw-alias-brand-primary)}
 .bdt-page .bdt-wallpaper-select{box-sizing:border-box;width:12rem;min-height:44px}.bdt-filter-range{width:12rem;max-width:100%;min-width:0;min-height:44px}.bdt-control output{flex:0 0 5ch;min-width:5ch;white-space:nowrap;text-align:end;font-variant-numeric:tabular-nums}
 .bdt-page a{color:var(--dsw-alias-brand-primary)}.bdt-muted{color:var(--dsw-alias-label-secondary);font-size:12px}.bdt-swatches{display:flex;gap:8px;margin-top:10px}.bdt-swatch{width:24px;height:24px;border-radius:50%;border:1px solid var(--dsw-alias-border-l2)}
@@ -148,7 +174,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-photo-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}.bdt-photo-heading strong{min-width:0;font-size:14px}.bdt-photo-date{white-space:nowrap}.bdt-photo-details{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:5px}.bdt-page .bdt-photo-caption a{min-width:0;color:inherit;text-underline-offset:2px}.bdt-photo-caption .bdt-swatches{flex-shrink:0;margin:0;gap:6px}.bdt-photo-caption .bdt-swatch{width:20px;height:20px;border-color:color-mix(in srgb,var(--dsw-alias-tooltip-label) 55%,transparent)}
 .bdt-page .bdt-photo-refresh{position:absolute;top:12px;inset-inline-end:12px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:44px;padding:0;border-radius:50%;border:1px solid color-mix(in srgb,var(--dsw-alias-tooltip-label) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-tooltip-bg) 86%,transparent);color:var(--dsw-alias-tooltip-label)}.bdt-photo-refresh svg{width:20px;height:20px}.bdt-page .bdt-photo-refresh:disabled{cursor:not-allowed}.bdt-page .bdt-photo-refresh[aria-busy=true]{cursor:wait}.bdt-page .bdt-photo-refresh:focus-visible{outline-color:var(--dsw-alias-tooltip-label);box-shadow:0 0 0 5px var(--dsw-alias-tooltip-bg)}.bdt-photo-refresh[aria-busy=true] svg{animation:bdt-refresh-spin 1s linear infinite}.bdt-photo-status{display:block;margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px}
 @keyframes bdt-refresh-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.bdt-photo-refresh[aria-busy=true] svg{animation:none}}
-.bdt-palette-group{min-width:0;padding:12px 0;margin:0;border:0}.bdt-palette-group legend{padding:0;font:inherit}.bdt-palette-group+.bdt-row{border-top:1px solid var(--dsw-alias-border-l1)}
+.bdt-palette-group{min-width:0;padding:12px 0;margin:0;border:0}.bdt-palette-group legend{padding:0;font:inherit}
 .bdt-palette-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin-top:12px}
 .bdt-palette-option{display:block;position:relative;min-width:0}.bdt-palette-choice{position:absolute;inset-inline-start:12px;top:12px;width:1px;height:1px;opacity:0;margin:0}
 .bdt-palette-card{display:flex;flex-direction:column;gap:9px;height:100%;padding:8px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);cursor:pointer}
@@ -156,7 +182,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-palette-caption{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px}.bdt-palette-name{min-width:0;overflow-wrap:anywhere;line-height:1.4}.bdt-palette-check{display:flex;align-items:center;justify-content:center;flex:0 0 18px;height:18px;border-radius:50%;font-size:12px;visibility:hidden;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground)}.bdt-palette-choice:checked+.bdt-palette-card .bdt-palette-check{visibility:visible}
 .bdt-palette-group:disabled .bdt-palette-card{cursor:not-allowed}.bdt-palette-group:disabled .bdt-palette-name{color:var(--dsw-alias-label-secondary)}
 .bdt-palette-group,.bdt-palette-card,.bdt-mini,.bdt-mini *{box-sizing:border-box}
-.bdt-sidebar-group{min-width:0;margin:16px 0 0;border-top:1px solid var(--dsw-alias-border-l1)}.bdt-sidebar-group summary{padding:12px 0;font:inherit;font-weight:600;cursor:pointer}
+.bdt-sidebar-group{min-width:0}.bdt-sidebar-group summary{padding:12px 0;font:inherit;font-weight:600;cursor:pointer}
 .bdt-sidebar-group fieldset{min-width:0;margin:0;padding:0;border:0}.bdt-sidebar-legend{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 ${PALETTE_PREVIEW_CSS}
 @media(max-width:560px){.bdt-page{padding:16px}.bdt-row{gap:8px}.bdt-row>label{width:100%}.bdt-row:has(.bdt-wallpaper-select,.bdt-filter-range)>.bdt-control,.bdt-page .bdt-wallpaper-select{width:100%}.bdt-filter-range{flex:1}}`;
@@ -165,25 +191,130 @@ ${PALETTE_PREVIEW_CSS}
         // palette until the real shell actually mounts, even without an image.
         React.useEffect(() => { document.getElementById(BOOT_STYLE_ID)?.remove(); }, []);
         const s = useState();
-        React.useLayoutEffect(() => {
-          if (!s.settings.enabled || !s.url) return;
-          return alignWallpaper({
-            document, window, surfaces: SIDEBAR_SURFACES, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
-            mountBackground: surface => mountSidebarBackground(document, surface),
-          });
-        }, [s.settings.enabled, s.url, s.imageWidth, s.imageHeight]);
+        // DSH's transparent session tiles share the outer window's wallpaper and weather.
+        const condition = s.url && !window.frameElement?.matches('iframe[data-dsh-tile-layout]') ? activeWeatherEffect(s) : null;
+        const { mode, facing } = s.settings.weather;
+        const { windKmh, windDegrees } = (mode === 'location' && s.observation) || {};
+        const look = weatherLooks[condition];
+        const active = Boolean(look);
         const colors = React.useMemo(() => core.makeTokens(s.settings.dynamic ? s.accent : [112, 112, 112], s.settings.strength, s.settings.dynamic ? s.settings.paletteMode : 'monochrome'),
           [s.accent, s.settings.strength, s.settings.dynamic, s.settings.paletteMode]);
+        const backdrop = React.useMemo(() => active ? weatherBackdrop(s.settings, colors, s.scheme) : null,
+          [active, s.settings, colors, s.scheme]);
+        const engine = React.useRef(null);
+        const refreshCrop = React.useRef(null);
+        React.useLayoutEffect(() => {
+          if (!active) return;
+          const layer = createWeatherPane(document);
+          layer.setAttribute('data-bdt-weather', '');
+          layer.setAttribute('aria-hidden', 'true');
+          document.body.prepend(layer);
+          const scene = createWeatherEngine(document, layer.querySelector(PRECIPITATION_CANVAS), look, condition, s.photo, facing);
+          engine.current = scene;
+          const updateLight = () => scene?.updateLight(new Date());
+          updateWindowLight = updateLight;
+          return () => {
+            if (updateWindowLight === updateLight) updateWindowLight = undefined;
+            scene?.dispose();
+            engine.current = null;
+            layer.remove();
+          };
+        }, [active]);
+        React.useLayoutEffect(() => {
+          engine.current?.setBackdrop(backdrop);
+        }, [backdrop]);
+        React.useLayoutEffect(() => {
+          engine.current?.setEffect(look, condition, s.photo);
+        }, [condition, look, s.photo]);
+        React.useLayoutEffect(() => {
+          engine.current?.setWeather(windKmh, windDegrees, facing);
+        }, [look, s.photo, windKmh, windDegrees, facing]);
+        React.useLayoutEffect(() => {
+          refreshCrop.current?.();
+        }, [s.settings.leftSidebar.background, s.settings.rightSidebar.background]);
+        React.useLayoutEffect(() => {
+          if (!s.settings.enabled || !s.url) return;
+          const stopAlignment = alignWallpaper({
+            document, window, surfaces: SIDEBAR_SURFACES, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
+            mountBackground: surface => mountSidebarBackground(document, surface, active),
+            onLayout: active ? (width, height, surfaces) => {
+              const panes = surfaces.map(([layer, box]) => [layer, box,
+                layer?.parentElement?.closest('[data-sidebar-right-panel]') ? 'right' : 'left']);
+              refreshCrop.current = () => engine.current?.layout(width, height, panes);
+              refreshCrop.current();
+            } : undefined,
+          });
+          return () => {
+            stopAlignment();
+            refreshCrop.current = null;
+          };
+        }, [s.settings.enabled, s.url, s.imageWidth, s.imageHeight, active]);
         if (!s.settings.enabled || !s.url) return null;
         const image = `url(${JSON.stringify(s.url)})`;
-        const filter = wallpaperFilters.css({ selector: 'html', image, overlays: [], settings: s.settings, fixed: true, aligned: true });
-        const mainBase = colors['--dsw-alias-bg-base'][s.scheme].replace(/^rgba\((\d+, \d+, \d+), [^)]+\)$/, 'rgb($1)');
+        const visibilityMatte = colors['--dsw-alias-bg-base'][s.scheme];
+        const overlays = s.settings.strength < 100 ? [visibilityMatte] : [];
+        const filter = wallpaperFilters.css({ selector: 'html', image, overlays, settings: s.settings, fixed: true, aligned: true });
+        const mainBase = visibilityMatte.replace(/^rgba\((\d+, \d+, \d+), [^)]+\)$/, 'rgb($1)');
         const { base, matte } = sidebarColors(colors, s.scheme);
         const sidebars = sidebarBackgroundCSS({ settings: s.settings, image, overlays: [], matte, base });
-        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${sidebars}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
+        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
+      }
+      function WeatherForm({ config, observation, status, row }) {
+        const [draft, setDraft] = React.useState(config);
+        const [locating, setLocating] = React.useState(false);
+        const [error, setError] = React.useState('');
+        const edit = (key, value) => { setError(''); setDraft(current => ({ ...current, [key]: value })); };
+        function locate() {
+          const failed = () => { setLocating(false); setError('weatherLocateFailed'); };
+          if (!navigator.geolocation) { failed(); return; }
+          setLocating(true); setError('');
+          navigator.geolocation.getCurrentPosition(({ coords }) => {
+            edit('location', `${coords.latitude.toFixed(2)}, ${coords.longitude.toFixed(2)}`);
+            setLocating(false);
+          }, failed, { timeout: 10000, maximumAge: 300000 });
+        }
+        function submit(event) {
+          event.preventDefault();
+          if (!draft.location.trim()) { setError('weatherLocationNeeded'); return; }
+          if (draft.provider === 'custom' && !customEndpoint(draft.endpoint)) { setError('weatherEndpointInvalid'); return; }
+          const refreshMinutes = Number(draft.refreshMinutes);
+          if (!Number.isSafeInteger(refreshMinutes) || refreshMinutes < 1) { setError('weatherRefreshMinutesInvalid'); return; }
+          update({ weather: { ...settings.weather, ...draft, refreshMinutes } });
+          void weather.sync(settings, true);
+        }
+        const message = error || status;
+        const wind = observation?.windKmh;
+        const direction = observation?.windDegrees;
+        const summary = observation && [observation.place, t(`weather.${observation.effect}`),
+          wind != null ? `${t('weatherWind')} ${wind} km/h` : null,
+          direction != null ? `${t('weatherWindDirection')} ${direction}°` : null].filter(Boolean).join(' · ');
+        return h('form', { className: 'bdt-weather-form', onSubmit: submit },
+          row('weatherLocation', h('input', { id: 'bdt-weatherLocation', type: 'text', required: true, maxLength: 200,
+            placeholder: t('weatherLocationPlaceholder'), value: draft.location, disabled: locating, onChange: e => edit('location', e.target.value) }),
+            h('button', { type: 'button', disabled: locating, onClick: locate }, t(locating ? 'weatherLocating' : 'weatherLocate'))),
+          row('weatherProvider', h('select', { id: 'bdt-weatherProvider', className: 'bdt-wallpaper-select', value: draft.provider,
+            onChange: e => edit('provider', e.target.value) }, ...WEATHER_PROVIDERS.map(value => h('option', { key: value, value }, t(`weatherProvider.${value}`))))),
+          draft.provider === 'custom' && h('div', null,
+            row('weatherEndpoint', h('input', { id: 'bdt-weatherEndpoint', type: 'url', required: true, maxLength: 2048,
+              'aria-describedby': 'bdt-weatherEndpointHint', value: draft.endpoint, placeholder: 'https://example.com/weather', onChange: e => edit('endpoint', e.target.value) })),
+            h('p', { id: 'bdt-weatherEndpointHint', className: 'bdt-muted' }, t('weatherEndpointHint'))),
+          row('weatherRefreshMinutes', h('input', { id: 'bdt-weatherRefreshMinutes', type: 'number', min: 1, step: 1, required: true,
+            value: draft.refreshMinutes, onChange: e => edit('refreshMinutes', e.target.value) })),
+          h('div', { className: 'bdt-weather-actions' },
+            h('div', { className: 'bdt-weather-summary' },
+              h('span', { role: 'status', className: 'bdt-muted' }, message ? t(message) : summary),
+              observation && config.provider !== 'custom' && h('a', { href: config.provider === 'open-meteo' ? 'https://open-meteo.com/' : 'https://wttr.in/',
+                className: 'bdt-muted', target: '_blank', rel: 'noopener noreferrer' }, t(`weatherProvider.${config.provider}`))),
+            h('button', { type: 'submit', disabled: locating }, t('weatherApply'))));
       }
       function Settings() {
         useLocale(); const s = useState(), prefs = s.settings;
+        const { facing, ...weatherConfig } = prefs.weather;
+        const weatherChoice = prefs.weather.mode === 'fixed' ? prefs.weather.effect : prefs.weather.mode;
+        const selectWeather = choice => {
+          const patch = choice === 'off' || choice === 'location' ? { mode: choice } : { mode: 'fixed', effect: choice };
+          update({ weather: { ...prefs.weather, ...patch } });
+        };
         const [sidebarOpen, setSidebarOpen] = React.useState(() => Object.fromEntries(
           ['leftSidebar', 'rightSidebar'].map(key => [key, prefs[key].visibilityMode === 'custom'])));
         const row = (label, control, hint, title = t(label)) => h('div', { key: label, className: 'bdt-row' }, h('label', { htmlFor: `bdt-${label}` }, title), h('div', { className: 'bdt-control' }, control, hint));
@@ -241,6 +372,16 @@ ${PALETTE_PREVIEW_CSS}
           h('span', { className: 'bdt-photo-status', role: 'status', 'aria-live': 'polite' }, !prefs.enabled ? t('paused') : s.busy ? t('loading') : s.issue ? t(s.issue) : t(s.meta ? s.meta.market === prefs.market ? 'ready' : 'sourceFailed' : 'waiting')),
           h('div', { className: 'bdt-card' }, row('enabled', checkbox('enabled')),
             row('market', h('select', { id: 'bdt-market', value: prefs.market, onChange: e => update({ market: e.target.value }), className: 'bdt-wallpaper-select' }, ...['zh-CN', 'en-US'].map(market => h('option', { key: market, value: market }, t(`market.${market}`))))),
+            row('weatherChoice', h('select', { id: 'bdt-weatherChoice', className: 'bdt-wallpaper-select', value: weatherChoice, disabled: !prefs.enabled,
+              onChange: e => selectWeather(e.target.value) },
+              ...weatherChoices.map(choice => h('option', { key: choice, value: choice },
+                t(WEATHER_EFFECTS.includes(choice) ? `weather.${choice}` : `weatherChoice.${choice}`))))),
+            prefs.enabled && prefs.weather.mode !== 'off' && row('weatherFacing', h('select', {
+              id: 'bdt-weatherFacing', className: 'bdt-wallpaper-select', value: facing,
+              onChange: e => update({ weather: { ...prefs.weather, facing: e.target.value } }),
+            }, ...Object.keys(FACING_BEARINGS).map(value => h('option', { key: value, value }, t(`weatherFacing.${value}`))))),
+            prefs.enabled && prefs.weather.mode === 'location' && h(WeatherForm, { key: JSON.stringify(weatherConfig), config: weatherConfig,
+              observation: s.observation, status: s.weatherStatus, row }),
             row('filterMode', h('select', { id: 'bdt-filterMode', className: 'bdt-wallpaper-select', value: prefs.filterMode, disabled: !prefs.enabled, onChange: e => update({ filterMode: e.target.value }) },
               ...wallpaperFilters.modes.map(mode => h('option', { key: mode, value: mode }, t(`filter.${mode}`))))),
             filterOption && row(filterLabel, h('input', { id: filterId, className: 'bdt-filter-range', type: 'range', min: 0, max: filterOption.max, step: 1,
@@ -248,7 +389,7 @@ ${PALETTE_PREVIEW_CSS}
               onChange: e => update({ filterAmounts: { ...prefs.filterAmounts, [prefs.filterMode]: Number(e.target.value) } }),
             }), h('output', { htmlFor: filterId }, `${filterAmount}${filterOption.unit}`)),
             row('mode', h('select', { id: 'bdt-mode', value: prefs.mode, onChange: e => update({ mode: e.target.value }) }, ...['schedule', 'system', 'follow', 'light', 'dark'].map(mode => h('option', { key: mode, value: mode }, t(mode))))),
-            prefs.mode === 'schedule' && h('div', null, ...['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) })))),
+            prefs.mode === 'schedule' && ['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) }))),
             row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`)),
             ...['leftSidebar', 'rightSidebar'].map(sidebarControls),
             row('dynamic', checkbox('dynamic')),
@@ -270,7 +411,11 @@ ${PALETTE_PREVIEW_CSS}
       });
       ctx.effect(() => {
         const timer = setInterval(tick, 60000);
-        const wake = () => { if (document.visibilityState === 'visible') tick(); };
+        const wake = () => {
+          if (document.visibilityState !== 'visible') return;
+          tick();
+          void weather.sync(settings);
+        };
         const online = () => { lastCheck = 0; tick(); };
         const storage = event => {
           if (event.key !== KEY) return;
@@ -282,9 +427,9 @@ ${PALETTE_PREVIEW_CSS}
           } catch { /* Ignore invalid third-party storage writes. */ }
         };
         document.addEventListener('visibilitychange', wake); window.addEventListener('online', online); window.addEventListener('storage', storage);
-        syncMode(); void refresh();
+        syncMode(); void refresh(); void weather.sync(settings);
         return () => {
-          alive = false; generation++; clearInterval(timer); controller?.abort();
+          weather.dispose(); alive = false; generation++; clearInterval(timer); controller?.abort();
           document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', online); window.removeEventListener('storage', storage);
           document.getElementById(BOOT_STYLE_ID)?.remove();
           tokenDisposer?.(); restoreTheme(); if (activeUrl) URL.revokeObjectURL(activeUrl); listeners.clear();

@@ -84,8 +84,8 @@ for (const mode of PALETTE_MODES) test(`cached ${mode} palette contains six opaq
   }
 });
 
-test('wallpaper startup uses the same 10–100% curve without a fixed scrim', () => {
-  for (const strength of [10, 28, 100]) for (const mode of ['light', 'dark']) {
+test('wallpaper startup uses the same linear visibility as the live background', () => {
+  for (const strength of [10, 28, 99, 100]) for (const mode of ['light', 'dark']) {
     const prefs = { ...settings, mode, strength }, stored = cache(prefs), output = css(prefs, stored);
     assert.ok(output.includes(`, ${backgroundAlpha(strength)})`));
     assert.doesNotMatch(output, /rgba\(255, 255, 255, 0\.56\)|rgba\(0, 0, 0, 0\.62\)/);

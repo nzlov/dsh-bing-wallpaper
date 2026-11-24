@@ -9,6 +9,7 @@ import { palettePreviewStyle } from '../palette-preview.js';
 import { createPlugin } from '../client-main.js';
 import { createAppearanceController } from '../appearance.js';
 import { PREFERENCES_KEY } from '../boot-theme.js';
+import { WEATHER_LAYOUT_CSS } from '../weather-effects.js';
 
 const photo = 'url("blob:https://example.test/wallpaper")';
 const base = 'var(--dsw-alias-bg-layer-1)';
@@ -203,7 +204,7 @@ test('sidebar wallpaper has no extra tint when its overlay and filter are off', 
 test('sidebars follow main visibility by default or retain independent custom values', () => {
   const tint = strength => `color-mix(in srgb, ${base} ${core.backgroundAlpha(strength) * 100}%, transparent)`;
   const surface = (css, side) => rule(css, veilLayer(side === 'left' ? leftColumn : rightPane));
-  for (const strength of [10, 28, 50, 75, 100]) {
+  for (const strength of [10, 28, 50, 75, 99, 100]) {
     const css = render({ strength, leftSidebar: { tint: false }, rightSidebar: { tint: false } });
     for (const side of ['left', 'right']) {
       const layer = surface(css, side);
@@ -274,7 +275,7 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   const React = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child != null && child !== false) }),
     useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}],
-    useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    useMemo: make => make(), useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
   };
   const ctx = {
     effect(fn) { const dispose = fn(); if (typeof dispose === 'function') disposers.push(dispose); }, on() {},
@@ -303,7 +304,9 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
     const effect = wallpaperFilters.effect({ filterMode: mode });
     assert.ok(rule(css, 'html::before').includes(`filter:${effect?.filter || 'none'}`));
     assert.ok(rule(css, 'html::before').includes('url('));
-    assert.ok(rule(css, 'html::after').includes(effect?.tint || 'background-image:none'));
+    const visibility = appliedTokens['--dsw-alias-bg-base'].light;
+    const overlays = [visibility, ...(effect?.tint ? [effect.tint] : [])];
+    assert.ok(rule(css, 'html::after').includes(`background-image:${overlays.map(color => `linear-gradient(${color},${color})`).join(',')}`));
     assert.doesNotMatch(rule(css, 'html::after'), /url\(|filter:/);
   }
   change('bdt-filterMode', 'none');
@@ -313,6 +316,24 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   assert.match(rule(wallpaper().children[0], 'html::after'), /background-image:none/);
   for (const side of [leftColumn, rightPane]) assert.doesNotMatch(rule(wallpaper().children[0], veilLayer(side)), /color-mix/);
   change('bdt-strength', '28');
+  change('bdt-weatherChoice', 'rain');
+  const mainCSS = wallpaper().children[0];
+  assert.ok(mainCSS.includes(WEATHER_LAYOUT_CSS));
+  const shell = 'body div:has(> [data-shell-overlay])';
+  const transparentSurfaces = mainCSS.match(/[^{}]+(?=\{background-color:transparent\})/g)
+    .flatMap(selectors => selectors.split(/,\s*\n/).map(selector => selector.trim()));
+  for (const selector of [shell, `html[data-windows-titlebar] ${shell}`, 'body [data-slot="main.conversation"] > [data-phase]']) {
+    assert.ok(transparentSurfaces.includes(selector), selector);
+  }
+  globalThis.window.frameElement = { matches: selector => selector === 'iframe[data-dsh-tile-layout]' };
+  assert.ok(!wallpaper().children[0].includes(WEATHER_LAYOUT_CSS));
+  delete globalThis.window.frameElement;
+  const depth = (css, selector) => Number(/z-index:(-?\d+)/.exec(rule(css, selector))[1]);
+  assert.ok(depth(mainCSS, 'html::before') < depth(mainCSS, 'html::after'));
+  assert.ok(depth(mainCSS, 'html::after') < depth(WEATHER_LAYOUT_CSS, '[data-bdt-weather]'));
+  for (const side of [leftColumn, rightPane]) {
+    assert.ok(depth(mainCSS, veilLayer(side)) < depth(WEATHER_LAYOUT_CSS, '[data-bdt-sidebar-background]>[data-bdt-weather-pane]'));
+  }
   fail = true;
   nodes(settings()).find(node => node.props.className === 'bdt-photo-refresh').props.onClick();
   await new Promise(setImmediate);

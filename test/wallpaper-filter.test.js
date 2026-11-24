@@ -53,9 +53,9 @@ test('effects are bounded photo-only CSS; chosen tints paint above the image', a
     const css = render(mode, amount);
     assert.match(css, pattern, mode);
     const [before, after] = css.split('html::after');
-    assert.match(before, /^html::before\{content:"";position:fixed;[^}]*z-index:-2;pointer-events:none/);
+    assert.match(before, /^html::before\{content:"";position:fixed;[^}]*z-index:-3;pointer-events:none/);
     assert.ok(before.includes(photo));
-    assert.match(after, /z-index:-1;pointer-events:none;background-image:(?:linear-gradient|none)/);
+    assert.match(after, /z-index:-2;pointer-events:none;background-image:(?:linear-gradient|none)/);
     assert.ok(!after.includes('filter:'));
     const compiled = await transform(css, { loader: 'css' });
     assert.deepEqual(compiled.warnings, []);
@@ -96,7 +96,7 @@ test('both locales name each filter and adjustment; settings preview keeps the o
   assert.doesNotMatch(source, /filterScope|bdt-filter-note/);
   assert.match(source, /filterOption && row\(filterLabel, h\('input',[^\n]+type: 'range', min: 0, max: filterOption\.max/);
   assert.match(source, /aria-valuetext[^\n]+filterPixels/);
-  assert.match(source, /if \(filterOnly\) \{ settings = next; if \(persist\) save\(\); publish\(\{ settings \}\); return; \}/);
+  assert.match(source, /if \(backgroundOnly\) \{[^}]+publish\(\{ settings \}\);\s+if \(weatherChanged\) void weather.sync\(settings\);\s+return;/);
   assert.match(source, /className: 'bdt-preview-image', src: s\.url/);
   assert.doesNotMatch(source, /bdt-preview-tint|filter: look\?\.filter/);
   assert.match(source, /extractImagePalettes\(context\.getImageData/);

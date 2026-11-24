@@ -45,7 +45,7 @@ export function createWallpaperFilters() {
     const layers = look.tint ? [...overlays, look.tint] : overlays;
     const backing = fixed ? '' : `${selector}{position:relative;isolation:isolate;overflow:hidden}`;
     const geometry = aligned ? `background-size:var(--bdt-wallpaper-size,cover);background-position:calc(var(--bdt-wallpaper-x,0px) + ${look.bleed || 0}px) calc(var(--bdt-wallpaper-y,0px) + ${look.bleed || 0}px);` : '';
-    return `${backing}${selector}::before{content:"";position:${position};inset:${look.bleed ? `-${look.bleed}px` : '0'};z-index:-2;pointer-events:none;background:${image} center/cover no-repeat;${geometry}filter:${look.filter || 'none'};}${selector}::after{content:"";position:${position};inset:0;z-index:-1;pointer-events:none;background-image:${layers.map(color => `linear-gradient(${color},${color})`).join(',') || 'none'}}`;
+    return `${backing}${selector}::before{content:"";position:${position};inset:${look.bleed ? `-${look.bleed}px` : '0'};z-index:-3;pointer-events:none;background:${image} center/cover no-repeat;${geometry}filter:${look.filter || 'none'};}${selector}::after{content:"";position:${position};inset:0;z-index:-2;pointer-events:none;background-image:${layers.map(color => `linear-gradient(${color},${color})`).join(',') || 'none'}}`;
   }
 
   return { modes, options, normalize, effect, css };

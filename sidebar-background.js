@@ -1,5 +1,7 @@
 import { wallpaperFilters } from './wallpaper-filter.js';
 import { backgroundAlpha, normalizeStrength } from './wallpaper-visibility.js';
+import { createWeatherPane } from './weather-effects.js';
+import { SHELL_FRAME as frame } from './compatibility.js';
 
 export const SIDEBAR_COLOR_ROLE = '--dsw-specific-sidebar-fill';
 export const SIDEBAR_TINT_ALPHA = .6;
@@ -24,7 +26,6 @@ export function normalizeSidebar(input) {
 
 // DSH's renderer keeps a display:contents slot wrapper in the DOM. Anchor to
 // that stable marker, not component nesting, CSS hashes or translated text.
-const frame = 'body div:has(> [data-shell-overlay])';
 const leftColumnChild = 'div:has(> [data-slot="sidebar"])';
 const leftColumn = `${frame} > ${leftColumnChild}`;
 const leftRoot = `${leftColumn} > [data-slot="sidebar"] > div`;
@@ -33,7 +34,7 @@ const rightChrome = `${rightPane} [data-dockkit-strip]`;
 const rightHeader = `${rightPane} > div:has(> [data-dockkit-strip])`;
 export const SIDEBAR_SURFACES = `${leftColumn},${rightPane}`;
 
-export function mountSidebarBackground(document, surface) {
+export function mountSidebarBackground(document, surface, active = false) {
   const layer = document.createElement('div');
   layer.setAttribute('data-bdt-sidebar-background', '');
   layer.setAttribute('aria-hidden', 'true');
@@ -44,7 +45,7 @@ export function mountSidebarBackground(document, surface) {
   const photo = document.createElement('div'), veil = document.createElement('div');
   photo.setAttribute('data-bdt-sidebar-image', '');
   veil.setAttribute('data-bdt-sidebar-veil', '');
-  layer.append(photo, veil);
+  layer.append(photo, veil, createWeatherPane(document, active));
   surface.prepend(layer);
   return layer;
 }
@@ -75,7 +76,7 @@ ${rightPane} :is([data-dockkit-strip], [data-dockkit-strip-tabs], [data-dockkit-
     if (sidebar.background === 'theme') {
       const selectors = left ? `${surface},${leftRoot}` : surface;
       const solid = `${selectors}{background:${base}}`;
-      return backing + solid + clear + toolbar;
+      return `${backing}${solid}${clear}${toolbar}${layer} > [data-bdt-weather-pane]{display:none}`;
     }
     const look = wallpaperFilters.effect(sidebar.filterMode === 'inherit' ? settings : sidebar);
     const visibility = sidebar.visibilityMode === 'custom' ? sidebar.visibility : settings.strength;

@@ -55,7 +55,7 @@ export function bootThemeCSS(settings, cache, now, systemDark, followDark, rende
   // The opaque backing also works when the in-memory image cache is empty.
   // Never store blob URLs or request an arbitrary cached URL at startup.
   const url = cache.imageUrl;
-  const alpha = Math.sqrt(1 - settings.strength / 100);
+  const alpha = (100 - Math.round(settings.strength)) / 100;
   const matte = colors.background.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
   const imageMatch = typeof url === 'string' && url.length <= 300
     && /^\/bing-daily-theme\/api\/image\?(market=en-US&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.exec(url);

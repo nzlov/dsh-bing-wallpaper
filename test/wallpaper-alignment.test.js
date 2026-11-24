@@ -66,6 +66,8 @@ test('panel offsets map every split and bordered surface onto the same viewport 
     for (const target of f.document.surfaces) {
       const x = parseFloat(target.style.getPropertyValue('--bdt-wallpaper-x'));
       const y = parseFloat(target.style.getPropertyValue('--bdt-wallpaper-y'));
+      assert.equal(parseFloat(target.style.getPropertyValue('--bdt-glass-x')) + target.box.left, 0);
+      assert.equal(parseFloat(target.style.getPropertyValue('--bdt-glass-y')) + target.box.top, 0);
       assert.equal(x + target.box.left, geometry.x);
       assert.equal(y + target.box.top, geometry.y);
     }
@@ -95,7 +97,6 @@ test('docking mutations observe new panes, retire removed ones and restore only 
   const next = f.element(2500, 0);
   f.document.surfaces = [f.left, next];
   mutations.callback([{ type: 'childList', addedNodes: [next], removedNodes: [f.right, f.split] }]);
-  f.flush();
   assert.ok(resize.targets.has(next) && !resize.targets.has(f.right));
   assert.equal(f.right.style.getPropertyValue('--bdt-wallpaper-x'), '');
   assert.ok(next.style.getPropertyValue('--bdt-wallpaper-x'));
@@ -141,6 +142,11 @@ test('owned background layers remain mounted through transitions and mode change
   f.right.box.left = 2300; f.flush(); check(f.right);
   assert.equal(created.size, 3, 'mode and visibility changes reuse the filtered layers');
   assert.equal(removed.length, 0);
+  assert.ok(mutations.options.attributeFilter.includes('data-sidebar-collapsed'));
+  assert.ok(mutations.options.attributeFilter.includes('data-sidebar-right-opening'));
+  f.left.box.left = -240;
+  mutations.callback([{ type: 'attributes', attributeName: 'data-sidebar-collapsed', target: f.left }]);
+  check(f.left);
   f.right.running = false; f.flush();
   f.document.surfaces = [f.left, f.split];
   mutations.callback([{ type: 'childList', addedNodes: [], removedNodes: [f.right] }]);

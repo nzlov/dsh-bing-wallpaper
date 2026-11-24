@@ -20,5 +20,7 @@ Source: https://github.com/noctalia-dev/noctalia, revision
 The full license is included in `third-party/noctalia-LICENSE.txt`. Browser
 sampling, accessibility adaptation, and DSH integration can differ from Noctalia.
 
+The browser artifact includes Three.js 0.187.0 by the Three.js Authors, distributed under the MIT license in `third-party/three-LICENSE.txt`.
+
 esbuild is a development-only build tool and is not part of the browser runtime.
 Bing photographs remain owned by their respective rights holders.

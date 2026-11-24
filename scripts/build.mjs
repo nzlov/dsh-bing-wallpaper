@@ -34,3 +34,4 @@ window.__ModuleLoader__.load({
 });
 await mkdir(new URL('third-party/', root), { recursive: true });
 await copyFile(new URL('node_modules/@material/material-color-utilities/LICENSE', root), new URL('third-party/material-color-utilities-LICENSE.txt', root));
+await copyFile(new URL('node_modules/three/LICENSE', root), new URL('third-party/three-LICENSE.txt', root));

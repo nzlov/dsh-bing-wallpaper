@@ -5,5 +5,5 @@ export function normalizeStrength(value) {
 }
 
 export function backgroundAlpha(strength) {
-  return Math.sqrt(1 - normalizeStrength(strength) / 100);
+  return (100 - normalizeStrength(strength)) / 100;
 }

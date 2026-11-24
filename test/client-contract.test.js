@@ -38,7 +38,6 @@ test('wallpaper has no fixed readability scrim and dynamic-off releases every co
   const source = await read('client-main.js');
   const wallpaper = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
   assert.doesNotMatch(wallpaper, /wallpaperShade/);
-  assert.match(wallpaper, /wallpaperFilters\.css\(\{ selector: 'html', image, overlays: \[\], settings: s\.settings, fixed: true, aligned: true \}\)/);
   assert.match(source, /if \(!settings\.dynamic\) for \(const key of Object\.keys\(tokens\)\) if \(key !== '--dsw-alias-bg-base'\) delete tokens\[key\]/);
   assert.match(source, /if \(!settings\.enabled \|\| !state\.url\) \{ tokenDisposer\?\.\(\)/);
 });
@@ -48,7 +47,7 @@ test('wallpaper applies browser-local sidebar backgrounds only while enabled wit
   assert.match(wallpaper, /if \(!s\.settings\.enabled \|\| !s\.url\) return null;[\s\S]+sidebarBackgroundCSS\(\{ settings: s\.settings, image, overlays: \[\], matte, base \}\)/);
   assert.match(wallpaper, /sidebarColors\(colors, s\.scheme\)/);
   assert.match(wallpaper, /alignWallpaper\(\{\s+document, window, surfaces: SIDEBAR_SURFACES/);
-  assert.match(wallpaper, /mountBackground: surface => mountSidebarBackground\(document, surface\)/);
+  assert.match(wallpaper, /mountBackground: surface => mountSidebarBackground\(document, surface, active\)/);
   const bundle = await read('client.js');
   assert.ok(bundle.includes('leftSidebar') && bundle.includes('rightSidebar') && bundle.includes('data-dockkit-strip'), 'prebuilt client includes sidebar controls and chrome styling');
 });
@@ -67,7 +66,7 @@ test('appearance and visibility controls precede both sidebars and keep schedule
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
   const React = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child != null && child !== false) }),
-    useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}], useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}], useMemo: make => make(), useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
   };
   let lang = 'en';
   createPlugin(React, core, dictionaries, () => ({ sync() {}, restore() {}, changed() {} })).apply({
@@ -132,7 +131,7 @@ test('sidebar visibility controls and disclosure state stay independent and reta
       const snapshot = get();
       return snapshot?.settings ? { ...snapshot, url: 'blob:preview' } : snapshot;
     },
-    useMemo: make => make(), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    useMemo: make => make(), useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
     useState(initialState) {
       if (sidebarOpen === undefined) sidebarOpen = initialState();
       return [sidebarOpen, update => { sidebarOpen = typeof update === 'function' ? update(sidebarOpen) : update; }];
@@ -231,7 +230,21 @@ test('sidebar visibility controls and disclosure state stay independent and reta
   change('bdt-leftSidebar.visibilityMode', 'custom');
   assert.equal(find('bdt-leftSidebar.visibility').props.value, 93);
 
-  await t.test('settings preview remains the original image as wallpaper filters change', () => {
+  await t.test('one weather selector applies fixed conditions and keeps the original photo in settings', () => {
+    const optionValues = find('bdt-weatherChoice').children.map(node => node.props.value);
+    assert.deepEqual(optionValues.slice(0, 2), ['off', 'location']);
+    assert.ok(optionValues.includes('clouds') && optionValues.includes('heavyRain'));
+    assert.equal(find('bdt-weatherEffect'), undefined);
+    assert.equal(find('bdt-weatherFacing'), undefined);
+    change('bdt-weatherChoice', 'heavyRain');
+    assert.equal(saved().weather.mode, 'fixed');
+    assert.equal(saved().weather.effect, 'heavyRain');
+    assert.equal(find('bdt-weatherChoice').props.value, 'heavyRain');
+    assert.equal(find('bdt-weatherFacing').props.value, 'south');
+    assert.deepEqual(find('bdt-weatherFacing').children.map(option => option.props.value), ['east', 'west', 'south', 'north']);
+    change('bdt-weatherFacing', 'east');
+    assert.equal(saved().weather.facing, 'east');
+    assert.match(slots.get('bing-daily-theme.wallpaper')().children[0], /\[data-bdt-precipitation\]\{position:absolute/);
     for (const mode of ['none', 'blur', 'frosted', 'blue', 'grayscale', 'dim']) {
       change('bdt-filterMode', mode);
       const screen = view();
@@ -243,7 +256,7 @@ test('sidebar visibility controls and disclosure state stay independent and reta
       assert.ok(!screen.some(node => node.props.className === 'bdt-preview-tint'));
       if (mode === 'blur') {
         const wallpaper = slots.get('bing-daily-theme.wallpaper')();
-        assert.match(wallpaper.children[0], /filter:blur\(12px\)/, 'the actual wallpaper keeps its filter');
+        assert.match(wallpaper.children[0], /filter:blur\(12px\)/, 'the rain keeps the selected wallpaper filter strength');
       }
       if (mode === 'blue') {
         const wallpaper = slots.get('bing-daily-theme.wallpaper')();

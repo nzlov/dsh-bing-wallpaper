@@ -8,7 +8,7 @@ export function wallpaperGeometry(viewportWidth, viewportHeight, imageWidth, ima
 
 // Use viewport pixels rather than fixed backgrounds: transformed dock hosts
 // and mobile drawers otherwise establish their own background coordinates.
-export function alignWallpaper({ document, window, surfaces, imageWidth, imageHeight, mountBackground }) {
+export function alignWallpaper({ document, window, surfaces, imageWidth, imageHeight, mountBackground, onLayout }) {
   const root = document.documentElement, targets = new Set(), saved = new Map(), moving = new Map(), backgrounds = new Map();
   let frame = 0, dirty = true, disposed = false;
   const now = () => window.performance.now();
@@ -50,10 +50,14 @@ export function alignWallpaper({ document, window, surfaces, imageWidth, imageHe
     // Read all boxes before writing styles, including panes in the same split.
     const boxes = [...targets].map(target => [target, (backgrounds.get(target) || target).getBoundingClientRect()]);
     for (const [target, box] of boxes) {
+      // Each pane clips the same viewport-wide glass as the main wallpaper.
+      write(target, '--bdt-glass-x', `${-box.left}px`);
+      write(target, '--bdt-glass-y', `${-box.top}px`);
       // Measure the actual painting layer, including fractional dock borders.
       write(target, '--bdt-wallpaper-x', `${geometry.x - box.left}px`);
       write(target, '--bdt-wallpaper-y', `${geometry.y - box.top}px`);
     }
+    onLayout?.(window.innerWidth, window.innerHeight, boxes.map(([target, box]) => [backgrounds.get(target), box]));
   }
   function tick() {
     frame = 0;
@@ -72,7 +76,10 @@ export function alignWallpaper({ document, window, surfaces, imageWidth, imageHe
     if (records.some(record => record.type === 'attributes' || [...record.addedNodes, ...record.removedNodes].some(node =>
       node.nodeType === 1 && (node.matches('[data-slot="sidebar"],[data-sidebar-right-panel],[data-dockkit-host],[data-dockkit-pane],[data-dockkit-empty]')
         || node.querySelector('[data-slot="sidebar"],[data-sidebar-right-panel],[data-dockkit-host],[data-dockkit-pane],[data-dockkit-empty]'))))) {
-      dirty = true; schedule();
+      // A shell commit can run inside an animation frame. Mount and align its
+      // wallpaper now so that frame cannot paint the solid fallback or an old crop.
+      dirty = true;
+      measure();
     }
   }) : null;
   const transition = event => {
@@ -96,7 +103,8 @@ export function alignWallpaper({ document, window, surfaces, imageWidth, imageHe
   mutations?.observe(document.body, {
     subtree: true, childList: true, attributes: true,
     // Retained tabs/sessions change markers or hidden state without adding DOM.
-    attributeFilter: ['data-sidebar-drawer', 'data-sidebar-right-panel', 'data-sidebar-right-open', 'data-dockkit-pane', 'data-dockkit-host', 'data-dockkit-empty', 'hidden'],
+    attributeFilter: ['data-sidebar-drawer', 'data-sidebar-collapsed', 'data-sidebar-right-panel', 'data-sidebar-right-open',
+      'data-sidebar-right-opening', 'data-dockkit-pane', 'data-dockkit-host', 'data-dockkit-empty', 'hidden'],
   });
   resize?.observe(root);
   measure();

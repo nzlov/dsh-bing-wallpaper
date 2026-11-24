@@ -390,14 +390,14 @@ test('all modes retain accessible text and accents on panels at every visibility
   }
 });
 
-test('base alpha follows sqrt(1-strength/100), decreases monotonically and reaches exact zero', () => {
+test('base alpha changes by one percentage point per step of wallpaper visibility', () => {
   for (const mode of MODES) {
     let previous = { light: Infinity, dark: Infinity };
     for (let strength = 10; strength <= 100; strength++) {
       const tokens = makeTokens([20, 130, 180], strength, mode);
       for (const scheme of SCHEMES) {
         const alpha = parseCss(tokens['--dsw-alias-bg-base'][scheme]).alpha;
-        assert.ok(Math.abs(alpha - Math.sqrt(1 - strength / 100)) < 1e-12, `${mode} ${scheme} strength=${strength}: square-root alpha`);
+        assert.equal(alpha, (100 - strength) / 100, `${mode} ${scheme} strength=${strength}: linear alpha`);
         assert.ok(alpha < previous[scheme], `${mode} ${scheme} strength=${strength}: strictly decreasing alpha`);
         if (strength === 100) assert.equal(alpha, 0, `${mode} ${scheme}: fully visible wallpaper`);
         previous[scheme] = alpha;

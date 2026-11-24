@@ -1,3 +1,14 @@
+// DSH paints its base on the frame and again on the conversation. The photo
+// owns wallpaper visibility, so the shell only needs its foreground surfaces.
+export const SHELL_FRAME = 'body div:has(> [data-shell-overlay])';
+export const SHELL_WALLPAPER_CSS = `
+${SHELL_FRAME},
+html[data-windows-titlebar] ${SHELL_FRAME},
+${SHELL_FRAME} > div:has(> div > [data-slot="main"]),
+${SHELL_FRAME} > :is([data-rightbar-col],[data-shell-bottom]),
+body [data-slot="main.conversation"] > [data-phase]{background-color:transparent}
+`;
+
 // dshmarket 1.73.20 ConfirmFold declares these four variables locally using
 // literal light colors. Body token inheritance cannot replace them. Restrict
 // this adapter to its actual CSS-module class; do not recolor images or states.
