@@ -116,7 +116,7 @@ export function createWeatherEngine(document, canvas, look, effect, photo, facin
 
   function animated() {
     if (precipitation || effect === 'fog' || (effect === 'clouds' && drifting())) return true;
-    return (effect === 'clear' || effect === 'clouds') && state.light.day && state.light.intensity > 0;
+    return (effect === 'clear' || effect === 'clouds') && state.light.intensity > 0;
   }
 
   function drifting() {

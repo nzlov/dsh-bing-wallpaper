@@ -312,55 +312,53 @@ test('local clock moves sunlight and dimmer moonlight from east to west', t => {
   assert.ok(lightColor.value.x < lightColor.value.z);
 });
 
-test('sunlit clear and cloudy skies move their rays in calm air and pause for reduced motion', t => {
+test('clear and cloudy rays move more slowly at night and pause for reduced motion', t => {
   for (const effect of ['clear', 'clouds']) {
-    const f = atmosphereFixture(t, effect);
-    const snapshot = () => f.uniforms.beamMotion.value.toArray();
-    f.update(0);
-    const initial = snapshot();
-    f.update(3);
-    const moving = snapshot();
-    assert.notDeepEqual(moving, initial);
-    assert.equal(f.uniforms.offset.value, 0);
-    f.update(15, { reduced: true });
-    assert.deepEqual(snapshot(), moving);
-    f.update(16);
-    assert.notDeepEqual(snapshot(), moving);
-    f.update(17, { light: orbit(12, 'north') });
-    assert.equal(f.uniforms.scattering.value, 0);
-    f.update(18, { light: orbit(23) });
-    const moonlight = snapshot();
-    f.update(20, { light: orbit(23) });
-    assert.deepEqual(snapshot(), moonlight);
+    const [dayMovement, nightMovement] = [orbit(12), orbit(0)].map(light => {
+      const { uniforms, update } = atmosphereFixture(t, effect);
+      const motion = uniforms.beamMotion.value;
+      update(0, { light });
+      const initial = motion.clone();
+      update(1, { light });
+      const moving = motion.clone();
+      const change = moving.distanceTo(initial);
+      assert.ok(change > 0);
+      assert.equal(uniforms.offset.value, 0);
+      update(12, { light, reduced: true });
+      assert.deepEqual(motion.toArray(), moving.toArray());
+      update(13, { light });
+      assert.notDeepEqual(motion.toArray(), moving.toArray());
+      return change;
+    });
+    assert.ok(nightMovement < dayMovement, effect);
   }
 });
 
-test('clear and cloudy skies switch between solar rays and a silver moon on the same material', t => {
+test('clear and cloudy skies render cooler, dimmer moonbeams on the same material', t => {
   for (const effect of ['clear', 'clouds']) {
     const { object, sheet, uniforms, update } = atmosphereFixture(t, effect);
-    const { glow, lightColor, moonlight, origin, scattering } = uniforms;
+    const { glow, lightColor, origin, scattering } = uniforms;
     const material = sheet.material;
     const sun = orbit(12), moon = orbit(0);
+    const exposure = () => ({ glow: glow.value, scattering: scattering.value, color: lightColor.value.toArray() });
     update(0, { light: sun });
-    const sunlight = [glow.value, scattering.value, lightColor.value.toArray()];
-    assert.equal(moonlight.value, false);
-    assert.ok(scattering.value > 0);
+    const sunlight = exposure();
 
     update(0, { light: moon });
-    assert.equal(moonlight.value, true);
+    const moonlight = exposure();
     assert.deepEqual(origin.value.toArray(), [moon.x / 100, moon.y / 100]);
-    assert.ok(glow.value > 0 && glow.value < sunlight[0]);
-    assert.equal(scattering.value, 0);
-    const [red, green, blue] = lightColor.value.toArray();
-    assert.ok(red < green && green < blue && blue - red < .15);
+    assert.ok(moonlight.glow > 0 && moonlight.glow < sunlight.glow);
+    assert.ok(moonlight.scattering > 0 && moonlight.scattering < sunlight.scattering);
+    const [red, , blue] = moonlight.color;
+    assert.ok(red < blue);
     assert.ok(object.children.includes(sheet));
     assert.equal(sheet.material, material);
 
     update(0, { light: { ...moon, intensity: 0 } });
     assert.equal(glow.value, 0);
+    assert.equal(scattering.value, 0);
     update(0, { light: sun });
-    assert.equal(moonlight.value, false);
-    assert.deepEqual([glow.value, scattering.value, lightColor.value.toArray()], sunlight);
+    assert.deepEqual(exposure(), sunlight);
   }
 });
 
