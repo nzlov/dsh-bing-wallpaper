@@ -4,6 +4,12 @@
     "description": "每天更新 Bing 壁纸，从图片提取主题色，提供十种 HCT 风格，背景可见度可调至 100%，支持按时间、跟随系统或固定明暗模式。入口：设置 → Bing 每日壁纸。支持国内（中国）及国际（美国）Bing 壁纸来源，更新失败保留上一张。插件控制项保存在当前浏览器，明暗切换使用 DSH profile 共享的外观偏好。图片版权归 Bing 及原摄影作者所有。"
   },
   "title": "Bing 每日壁纸",
+  "settingsGroup.wallpaper": "壁纸",
+  "settingsGroup.appearance": "明暗外观",
+  "settingsGroup.background": "主背景",
+  "settingsGroup.sidebars": "侧栏",
+  "settingsGroup.weather": "天气窗景",
+  "settingsGroup.colours": "主题配色",
   "paletteMode": "取色模式",
   "palette.content": "M3 Content",
   "palette.tonal-spot": "M3 Tonal Spot",

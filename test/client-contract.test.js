@@ -52,7 +52,7 @@ test('wallpaper applies browser-local sidebar backgrounds only while enabled wit
   assert.ok(bundle.includes('leftSidebar') && bundle.includes('rightSidebar') && bundle.includes('data-dockkit-strip'), 'prebuilt client includes sidebar controls and chrome styling');
 });
 
-test('appearance and visibility controls precede both sidebars and keep scheduled times together', async t => {
+test('settings have labelled groups and keep scheduled times together', async t => {
   const dictionaries = Object.fromEntries(await Promise.all(['en', 'zh'].map(async lang => [lang, JSON.parse(await read(`locale/${lang}.json`))])));
   const originals = new Map(['localStorage', 'document', 'window'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const storage = new Map([[PREFERENCES_KEY, JSON.stringify({ enabled: false, mode: 'schedule', day: '06:15', night: '20:30' })]]);
@@ -66,7 +66,7 @@ test('appearance and visibility controls precede both sidebars and keep schedule
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
   const React = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child != null && child !== false) }),
-    useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}], useMemo: make => make(), useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}], useMemo: make => make(), useRef: current => ({ current }), useId: () => 'bdt-test', useEffect() {}, useLayoutEffect() {},
   };
   let lang = 'en';
   createPlugin(React, core, dictionaries, () => ({ sync() {}, restore() {}, changed() {} })).apply({
@@ -84,10 +84,30 @@ test('appearance and visibility controls precede both sidebars and keep schedule
     assert.deepEqual(indexes, [...indexes].sort((a, b) => a - b));
     for (const id of ids) assert.equal(screen.filter(node => node.props.id === id).length, 1, id);
   };
+  const groups = {
+    wallpaper: ['enabled', 'market', 'resolution'],
+    appearance: ['mode', 'day', 'night'],
+    background: ['strength', 'filterMode', 'parallax'],
+    sidebars: ['leftSidebar.background', 'rightSidebar.background'],
+    weather: ['weatherChoice'],
+    colours: ['dynamic', ...PALETTE_MODES.map(mode => `test-${mode}`)],
+  };
   const ordered = ['bdt-mode', 'bdt-day', 'bdt-night', 'bdt-strength', 'bdt-leftSidebar.background', 'bdt-rightSidebar.background'];
   for (lang of ['en', 'zh']) {
     const screen = view();
     assertOrder(screen, ordered);
+    const sections = screen.filter(node => node.type === 'section' && node.props.className === 'bdt-card');
+    assert.deepEqual(sections.map(section => section.props['aria-labelledby']), Object.keys(groups).map(key => `bdt-group-${key}`));
+    for (const [key, controls] of Object.entries(groups)) {
+      const titleId = `bdt-group-${key}`;
+      const section = sections.find(node => node.props['aria-labelledby'] === titleId);
+      const contents = nodes(section);
+      const heading = find(contents, titleId);
+      assert.equal(heading?.type, 'h3');
+      assert.ok(dictionaries[lang][`settingsGroup.${key}`]);
+      assert.equal(heading.children[0], dictionaries[lang][`settingsGroup.${key}`]);
+      assertOrder(contents, controls.map(id => `bdt-${id}`));
+    }
     for (const key of ['mode', 'day', 'night', 'strength']) {
       const label = screen.find(node => node.type === 'label' && node.props.htmlFor === `bdt-${key}`);
       assert.equal(label?.children[0], dictionaries[lang][key]);

@@ -169,6 +169,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
 .bdt-photo{position:relative;margin:0;overflow:hidden;border-radius:12px;background:var(--dsw-alias-bg-layer-2)}.bdt-preview{position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;min-height:240px;background:var(--dsw-alias-bg-layer-2)}
 .bdt-preview-image{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;max-width:none}
 .bdt-card{padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);margin:16px 0}
+.bdt-card>h3{margin:0;padding-bottom:8px;font-size:16px;font-weight:600}
 .bdt-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;flex-wrap:wrap}
 :is(.bdt-card,.bdt-weather-form)>:not(:last-child),.bdt-sidebar-group[open]>summary,.bdt-sidebar-group .bdt-row:not(:last-child){border-bottom:1px solid var(--dsw-alias-border-l1)}
 .bdt-control{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bdt-page select,.bdt-page input:is([type=time],[type=text],[type=url],[type=number]),.bdt-page button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 10px;min-height:36px;max-width:100%}
@@ -356,6 +357,11 @@ ${PALETTE_PREVIEW_CSS}
         };
         const [sidebarOpen, setSidebarOpen] = React.useState(() => Object.fromEntries(
           ['leftSidebar', 'rightSidebar'].map(key => [key, prefs[key].visibilityMode === 'custom'])));
+        const group = (key, ...controls) => {
+          const titleId = `bdt-group-${key}`;
+          return h('section', { className: 'bdt-card', 'aria-labelledby': titleId },
+            h('h3', { id: titleId }, t(`settingsGroup.${key}`)), ...controls);
+        };
         const row = (label, control, hint, title = t(label)) => h('div', { key: label, className: 'bdt-row' }, h('label', { htmlFor: `bdt-${label}` }, title), h('div', { className: 'bdt-control' }, control, hint));
         const checkbox = key => h('input', { id: `bdt-${key}`, type: 'checkbox', checked: prefs[key], onChange: e => update({ [key]: e.target.checked }) });
         const filterOption = wallpaperFilters.options[prefs.filterMode], filterAmount = prefs.filterAmounts[prefs.filterMode];
@@ -412,19 +418,15 @@ ${PALETTE_PREVIEW_CSS}
               h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
                 h('path', { d: 'M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.36 6.36L3 16M8 16H3v5' })))),
           h('span', { className: 'bdt-photo-status', role: 'status', 'aria-live': 'polite' }, !prefs.enabled ? t('paused') : s.busy ? t('loading') : s.issue ? t(s.issue) : t(s.meta ? (s.meta.resolution || '1080p') !== prefs.resolution ? 'sourceFailed' : s.meta.market === prefs.market ? 'ready' : 'sourceFailed' : 'waiting')),
-          h('div', { className: 'bdt-card' }, row('enabled', checkbox('enabled')),
+          group('wallpaper',
+            row('enabled', checkbox('enabled')),
             row('market', h('select', { id: 'bdt-market', value: prefs.market, onChange: e => update({ market: e.target.value }), className: 'bdt-wallpaper-select' }, ...['zh-CN', 'en-US'].map(market => h('option', { key: market, value: market }, t(`market.${market}`))))),
-            row('resolution', h('select', { id: 'bdt-resolution', value: prefs.resolution, disabled: !prefs.enabled, onChange: e => update({ resolution: e.target.value }), className: 'bdt-wallpaper-select' }, ...core.RESOLUTIONS.map(resolution => h('option', { key: resolution, value: resolution }, t(`resolution.${resolution}`))))),
-            row('weatherChoice', h('select', { id: 'bdt-weatherChoice', className: 'bdt-wallpaper-select', value: weatherChoice, disabled: !prefs.enabled,
-              onChange: e => selectWeather(e.target.value) },
-              ...weatherChoices.map(choice => h('option', { key: choice, value: choice },
-                t(WEATHER_EFFECTS.includes(choice) ? `weather.${choice}` : `weatherChoice.${choice}`))))),
-            prefs.enabled && prefs.weather.mode !== 'off' && row('weatherFacing', h('select', {
-              id: 'bdt-weatherFacing', className: 'bdt-wallpaper-select', value: facing,
-              onChange: e => update({ weather: { ...prefs.weather, facing: e.target.value } }),
-            }, ...Object.keys(FACING_BEARINGS).map(value => h('option', { key: value, value }, t(`weatherFacing.${value}`))))),
-            prefs.enabled && prefs.weather.mode === 'location' && h(WeatherForm, { key: JSON.stringify(weatherConfig), config: weatherConfig,
-              observation: s.observation, status: s.weatherStatus, row }),
+            row('resolution', h('select', { id: 'bdt-resolution', value: prefs.resolution, disabled: !prefs.enabled, onChange: e => update({ resolution: e.target.value }), className: 'bdt-wallpaper-select' }, ...core.RESOLUTIONS.map(resolution => h('option', { key: resolution, value: resolution }, t(`resolution.${resolution}`)))))),
+          group('appearance',
+            row('mode', h('select', { id: 'bdt-mode', value: prefs.mode, onChange: e => update({ mode: e.target.value }) }, ...['schedule', 'system', 'follow', 'light', 'dark'].map(mode => h('option', { key: mode, value: mode }, t(mode))))),
+            prefs.mode === 'schedule' && ['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) })))),
+          group('background',
+            row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`)),
             row('filterMode', h('select', { id: 'bdt-filterMode', className: 'bdt-wallpaper-select', value: prefs.filterMode, disabled: !prefs.enabled, onChange: e => update({ filterMode: e.target.value }) },
               ...wallpaperFilters.modes.map(mode => h('option', { key: mode, value: mode }, t(`filter.${mode}`))))),
             filterOption && row(filterLabel, h('input', { id: filterId, className: 'bdt-filter-range', type: 'range', min: 0, max: filterOption.max, step: 1,
@@ -438,11 +440,20 @@ ${PALETTE_PREVIEW_CSS}
                 'aria-describedby': parallaxAvailable ? undefined : 'bdt-parallaxHint',
                 onChange: e => update({ parallaxStrength: Number(e.target.value) }),
               }), h('output', { htmlFor: 'bdt-parallax' }, parallaxText)),
-              !parallaxAvailable && h('p', { id: 'bdt-parallaxHint', className: 'bdt-muted bdt-field-hint' }, t('parallaxUnavailable'))),
-            row('mode', h('select', { id: 'bdt-mode', value: prefs.mode, onChange: e => update({ mode: e.target.value }) }, ...['schedule', 'system', 'follow', 'light', 'dark'].map(mode => h('option', { key: mode, value: mode }, t(mode))))),
-            prefs.mode === 'schedule' && ['day', 'night'].map(key => row(key, h('input', { id: `bdt-${key}`, type: 'time', value: prefs[key], onChange: e => update({ [key]: e.target.value }) }))),
-            row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`)),
-            ...['leftSidebar', 'rightSidebar'].map(sidebarControls),
+              !parallaxAvailable && h('p', { id: 'bdt-parallaxHint', className: 'bdt-muted bdt-field-hint' }, t('parallaxUnavailable')))),
+          group('sidebars', ...['leftSidebar', 'rightSidebar'].map(sidebarControls)),
+          group('weather',
+            row('weatherChoice', h('select', { id: 'bdt-weatherChoice', className: 'bdt-wallpaper-select', value: weatherChoice, disabled: !prefs.enabled,
+              onChange: e => selectWeather(e.target.value) },
+              ...weatherChoices.map(choice => h('option', { key: choice, value: choice },
+                t(WEATHER_EFFECTS.includes(choice) ? `weather.${choice}` : `weatherChoice.${choice}`))))),
+            prefs.enabled && prefs.weather.mode !== 'off' && row('weatherFacing', h('select', {
+              id: 'bdt-weatherFacing', className: 'bdt-wallpaper-select', value: facing,
+              onChange: e => update({ weather: { ...prefs.weather, facing: e.target.value } }),
+            }, ...Object.keys(FACING_BEARINGS).map(value => h('option', { key: value, value }, t(`weatherFacing.${value}`))))),
+            prefs.enabled && prefs.weather.mode === 'location' && h(WeatherForm, { key: JSON.stringify(weatherConfig), config: weatherConfig,
+              observation: s.observation, status: s.weatherStatus, row })),
+          group('colours',
             row('dynamic', checkbox('dynamic')),
             row('textColorMode', h('select', { id: 'bdt-textColorMode', className: 'bdt-wallpaper-select', value: prefs.textColorMode, disabled: !prefs.dynamic, onChange: e => update({ textColorMode: e.target.value }) },
               ...core.TEXT_COLOR_MODES.map(mode => h('option', { key: mode, value: mode }, t(`textColorMode.${mode}`))))),
