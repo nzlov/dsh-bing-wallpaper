@@ -41,6 +41,12 @@ test('no-cache, disabled and dynamic-off never revive an old theme', () => {
   assert.equal(css(settings, { ...cache(settings), version: 1 }), '', 'old extraction results cannot flash before the new palette loads');
   assert.equal(css(settings, { ...cache(settings), version: 2 }), '', 'old scrim-era colors cannot flash before the new palette loads');
   assert.equal(css({ ...settings, paletteMode: 'vibrant' }, cache(settings)), '');
+  assert.equal(css({ ...settings, textColorMode: 'high-contrast' }, cache(settings)), '');
+  assert.equal(css({ ...settings, pureBlackDark: true }, cache(settings)), '');
+  const purePrefs = { ...settings, pureBlackDark: true, mode: 'dark' };
+  const pureCache = makeBootCache(purePrefs, makeTokens([79, 87, 110], purePrefs.strength, purePrefs.paletteMode, purePrefs.textColorMode, { pureBlackDark: true }), imageUrl);
+  assert.equal(pureCache.pureBlackDark, true);
+  assert.match(css(purePrefs, pureCache), /background-color:rgb\(14, 14, 16\)/);
   assert.equal(css({ ...settings, strength: 100 }, cache(settings)), '');
   // A first successful refresh can cache the default palette before any user
   // preferences have been saved; its next boot still uses current defaults.
@@ -71,8 +77,10 @@ test('system/fixed modes and Follow use both live native body selectors, not sta
 });
 
 for (const mode of PALETTE_MODES) test(`cached ${mode} palette contains six opaque readable roles for both schemes`, () => {
-  const prefs = { ...settings, paletteMode: mode }, stored = cache(prefs);
+  const prefs = { ...settings, paletteMode: mode, textColorMode: 'high-contrast' };
+  const stored = makeBootCache(prefs, makeTokens([190, 105, 52], prefs.strength, prefs.paletteMode, prefs.textColorMode), imageUrl);
   assert.equal(stored.imageUrl, imageUrl);
+  assert.equal(stored.textColorMode, 'high-contrast');
   for (const scheme of ['light', 'dark']) {
     const colors = stored.colors[scheme];
     assert.equal(Object.keys(colors).length, 6);

@@ -1,5 +1,5 @@
 import {
-  Hct, TonalPalette, argbFromRgb, redFromArgb, greenFromArgb, blueFromArgb,
+  Contrast, Hct, TonalPalette, argbFromRgb, xyzFromArgb,
 } from '@material/material-color-utilities';
 
 // Role formulas are adapted from Noctalia's custom_schemes.cpp,
@@ -31,17 +31,8 @@ function hslToArgb([hue, saturation, lightness]) {
   return argbFromRgb(...channels.map(value => Math.round((value + m) * 255)));
 }
 
-function luminance(argb) {
-  const channels = [redFromArgb(argb), greenFromArgb(argb), blueFromArgb(argb)].map(value => {
-    const srgb = value / 255;
-    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-  });
-  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-}
-
 function contrast(a, b) {
-  const x = luminance(a), y = luminance(b);
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  return Contrast.ratioOfYs(xyzFromArgb(a)[1], xyzFromArgb(b)[1]);
 }
 
 // Noctalia adjusts in OKLCH. This smaller adapter searches HSL lightness while
@@ -52,6 +43,10 @@ function contrasting([h, s, start], background, minimum, dark) {
     const color = hslToArgb([h, s, lightness]);
     if (contrast(color, background) >= minimum || lightness === (dark ? 1 : 0)) return color;
   }
+}
+
+function onFill(background) {
+  return contrast(0xffffffff, background) >= contrast(0xff000000, background) ? 0xffffffff : 0xff000000;
 }
 
 function paletteFor(argb) {
@@ -111,6 +106,13 @@ function accentContainer([h, s, l], mode, dark) {
   return [h, saturation, Math.min(l + 0.35, 0.85)];
 }
 
+function fixedPair([h, s], mode, dark) {
+  if (s === 0) return [hslToArgb([h, 0, dark ? 0.85 : 0.40]), hslToArgb([h, 0, dark ? 0.75 : 0.30])];
+  const hi = mode === 'muted' ? Math.min(s, 0.15) : mode === 'soft' ? clamp(s, 0.30, 0.55) : Math.max(s, 0.70);
+  const lo = mode === 'muted' ? Math.min(s, 0.12) : mode === 'soft' ? clamp(s, 0.26, 0.48) : Math.max(s, 0.65);
+  return [hslToArgb([h, hi, dark ? 0.85 : 0.40]), hslToArgb([h, lo, dark ? 0.75 : 0.30])];
+}
+
 function makeScheme(colors, mode, dark) {
   const seeds = chooseAccents(colors, mode);
   const [primary, secondary, tertiary] = seeds.map((seed, i) => adjustedAccent(seed, i, mode, dark));
@@ -136,10 +138,14 @@ function makeScheme(colors, mode, dark) {
     : mode === 'soft' ? [0.16, 0.18, 0.14, 0.16, 0.18]
       : dark ? [0.90, 0.80, 0.85, 0.70, 0.75] : [0.90, 0.80, 0.85, 0.80, 0.75];
   const surface = surfaceColor(caps[0], dark ? 0.12 : 0.90);
+  const surfaceDim = surfaceColor(caps[2], dark ? 0.08 : 0.82);
+  const surfaceBright = surfaceColor(caps[4], dark ? 0.24 : 0.95);
   const surfaceVariant = surfaceColor(caps[1], dark ? 0.16 : 0.78);
+  const surfaceContainerLowest = surfaceColor(caps[2], dark ? 0.06 : 0.96);
   const surfaceContainerLow = surfaceColor(caps[2], dark ? 0.14 : 0.88);
   const surfaceContainer = surfaceColor(caps[3], dark ? 0.16 : 0.86);
   const surfaceContainerHigh = surfaceColor(caps[4], dark ? 0.20 : 0.84);
+  const surfaceContainerHighest = surfaceColor(caps[4], dark ? 0.24 : 0.82);
   const textSaturation = neutralSource ? 0 : mode === 'muted' ? 0.03 : mode === 'soft' ? 0.04 : 0.05;
   const onSurface = contrasting([sourceHue, textSaturation, dark ? 0.95 : 0.10], surface, 4.5, dark);
   const onSurfaceVariant = contrasting([sourceHue, neutralSource ? 0 : mode === 'muted' ? 0.03 : 0.05, dark ? 0.70 : 0.35],
@@ -153,18 +159,46 @@ function makeScheme(colors, mode, dark) {
   const error = colors.find(([h, s, l]) => (h <= 30 || h >= 330) && s > 0.4 && l > 0.3 && l < 0.7)
     || rgbToHsl([253, 70, 99]);
   const primaryArgb = hslToArgb(primary);
+  const secondaryArgb = hslToArgb(secondary);
+  const tertiaryArgb = hslToArgb(tertiary);
+  const errorArgb = hslToArgb(error);
+  const primaryContainer = hslToArgb(accentContainer(primary, mode, dark));
+  const secondaryContainer = hslToArgb(accentContainer(secondary, mode, dark));
+  const tertiaryContainer = hslToArgb(accentContainer(tertiary, mode, dark));
+  const errorContainer = hslToArgb(accentContainer(error, mode, dark));
+  const onPrimary = onFill(primaryArgb);
+  const onSecondary = onFill(secondaryArgb);
+  const onTertiary = onFill(tertiaryArgb);
+  const onError = onFill(errorArgb);
+  const onPrimaryContainer = contrasting([primary[0], neutralSource ? 0 : Math.min(primary[1], 0.25), dark ? 0.90 : 0.15], primaryContainer, 4.5, dark);
+  const onSecondaryContainer = contrasting([secondary[0], neutralSource ? 0 : Math.min(secondary[1], 0.25), dark ? 0.90 : 0.15], secondaryContainer, 4.5, dark);
+  const onTertiaryContainer = contrasting([tertiary[0], neutralSource ? 0 : Math.min(tertiary[1], 0.25), dark ? 0.90 : 0.15], tertiaryContainer, 4.5, dark);
+  const onErrorContainer = contrasting([error[0], Math.min(error[1], 0.25), dark ? 0.90 : 0.15], errorContainer, 4.5, dark);
+  const [primaryFixed, primaryFixedDim] = fixedPair(primary, mode, dark);
+  const [secondaryFixed, secondaryFixedDim] = fixedPair(secondary, mode, dark);
+  const [tertiaryFixed, tertiaryFixedDim] = fixedPair(tertiary, mode, dark);
+  const inverseSurface = hslToArgb([sourceHue, neutralSource ? 0 : mode === 'muted' ? 0.04 : 0.08, dark ? 0.90 : 0.15]);
+  const inverseOnSurface = hslToArgb([sourceHue, neutralSource ? 0 : textSaturation, dark ? 0.15 : 0.90]);
+  const inversePrimary = hslToArgb([
+    primary[0],
+    neutralSource ? 0 : mode === 'muted' ? Math.min(primary[1], 0.15) : mode === 'soft' ? clamp(primary[1] * 0.65, 0.25, 0.45) : Math.max(primary[1] * 0.8, 0.5),
+    dark ? 0.40 : 0.70,
+  ]);
   return {
-    primary: primaryArgb, secondary: hslToArgb(secondary), tertiary: hslToArgb(tertiary),
-    primaryContainer: hslToArgb(accentContainer(primary, mode, dark)),
-    secondaryContainer: hslToArgb(accentContainer(secondary, mode, dark)),
-    tertiaryContainer: hslToArgb(accentContainer(tertiary, mode, dark)),
-    // This is only a palette role; callers should keep DSH's semantic state colors.
-    error: hslToArgb(error),
-    surface, surfaceVariant, surfaceContainerLow, surfaceContainer, surfaceContainerHigh,
+    primary: primaryArgb, onPrimary, secondary: secondaryArgb, onSecondary, tertiary: tertiaryArgb, onTertiary,
+    primaryContainer, onPrimaryContainer, secondaryContainer, onSecondaryContainer, tertiaryContainer, onTertiaryContainer,
+    primaryFixed, primaryFixedDim, secondaryFixed, secondaryFixedDim, tertiaryFixed, tertiaryFixedDim,
+    error: errorArgb, onError, errorContainer, onErrorContainer,
+    surface, surfaceDim, surfaceBright, surfaceVariant,
+    surfaceContainerLowest, surfaceContainerLow, surfaceContainer, surfaceContainerHigh, surfaceContainerHighest,
     outline, outlineVariant, onSurface, onSurfaceVariant,
+    inverseSurface, inverseOnSurface, inversePrimary,
     // HCT tonal palettes are an adapter for DSH's accessibility search, not
     // the source of the HSL role colors above.
     primaryPalette: paletteFor(primaryArgb),
+    secondaryPalette: paletteFor(secondaryArgb),
+    tertiaryPalette: paletteFor(tertiaryArgb),
+    errorPalette: paletteFor(errorArgb),
     neutralPalette: paletteFor(onSurface),
     neutralVariantPalette: paletteFor(onSurfaceVariant),
   };

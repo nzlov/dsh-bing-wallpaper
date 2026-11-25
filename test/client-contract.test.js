@@ -269,6 +269,24 @@ test('sidebar visibility controls and disclosure state stay independent and reta
   for (const side of ['leftSidebar', 'rightSidebar']) {
     assert.equal(find(`bdt-${side}`).children.find(node => node.type === 'fieldset').props.disabled, true);
   }
+  const textSelect = find('bdt-textColorMode');
+  assert.deepEqual(textSelect.children.map(option => option.props.value), ['theme', 'high-contrast']);
+  change('bdt-textColorMode', 'high-contrast');
+  assert.equal(saved().textColorMode, 'high-contrast');
+  assert.equal(find('bdt-pureBlackDark').props.checked, false);
+  assert.equal(find('bdt-systemTweaks').props.checked, false);
+  find('bdt-pureBlackDark').props.onChange({ target: { checked: true } });
+  find('bdt-systemTweaks').props.onChange({ target: { checked: true } });
+  assert.equal(saved().pureBlackDark, true);
+  assert.equal(saved().systemTweaks, true);
+  find('bdt-enabled').props.onChange({ target: { checked: true } });
+  assert.match(slots.get('bing-daily-theme.wallpaper')().children[0], /\.qp-chip\[style\*="#4D6BFE" i\]/);
+  find('bdt-systemTweaks').props.onChange({ target: { checked: false } });
+  assert.doesNotMatch(slots.get('bing-daily-theme.wallpaper')().children[0], /\.qp-chip\[style\*="#4D6BFE" i\]/);
+  find('bdt-dynamic').props.onChange({ target: { checked: false } });
+  assert.equal(find('bdt-textColorMode').props.disabled, true);
+  assert.equal(find('bdt-pureBlackDark').props.disabled, true);
+  assert.equal(find('bdt-systemTweaks').props.disabled, true);
 });
 
 test('palette sidebar colour preserves text and control contrast in both schemes', () => {
@@ -279,7 +297,7 @@ test('palette sidebar colour preserves text and control contrast in both schemes
   const accents = [[29, 82, 214], [220, 100, 25], [67, 187, 128], [128, 255, 255], [128, 128, 128]];
   const surfaces = { light: [], dark: [] };
   for (const mode of PALETTE_MODES) for (const accent of accents) {
-    const tokens = makeTokens(accent, 100, mode);
+    const tokens = makeTokens(accent, 100, mode, 'high-contrast');
     for (const scheme of ['light', 'dark']) {
       const color = key => rgb(tokens[key][scheme]);
       const surface = color('--dsw-specific-sidebar-fill');

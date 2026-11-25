@@ -113,7 +113,7 @@ test('sparse visible pixels still contribute when all fixed sample positions are
   assert.deepEqual(palettes.faithful.slice(0, 3), [[255, 0, 0], [255, 255, 0], [0, 255, 0]]);
 });
 
-test('complex inputs are deterministic without consulting or replacing global randomness', () => {
+test('complex inputs are deterministic across resolutions without consulting global randomness', () => {
   const pixels = image(i => [(i * 17) % 256, (i * 31 + Math.floor(i / 67)) % 256, (i * 53 + Math.floor(i / 23)) % 256, 255]);
   const original = Math.random;
   const rejectRandomness = () => { throw new Error('randomness used'); };
@@ -123,6 +123,10 @@ test('complex inputs are deterministic without consulting or replacing global ra
     assert.equal(Math.random, rejectRandomness);
     validPalettes(first);
     assert.deepEqual(extractImagePalettes(pixels), first);
+    const wide = new Uint8ClampedArray(256 * 144 * 4);
+    for (let i = 0; i < 256 * 144; i++) wide.set([(i * 13) % 256, (i * 29) % 256, (i * 47) % 256, 255], i * 4);
+    validPalettes(extractImagePalettes(wide, 256, 144));
+    assert.throws(() => extractImagePalettes(wide), TypeError);
     assert.equal(Math.random, rejectRandomness);
   } finally {
     Math.random = original;

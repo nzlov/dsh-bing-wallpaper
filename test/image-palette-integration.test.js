@@ -26,9 +26,9 @@ test('one decoded image supplies mode-specific previews and theme changes withou
     setItem: (key, value) => stored.set(key, value),
     removeItem: key => stored.delete(key),
   };
-  const pixels = new Uint8ClampedArray(112 * 112 * 4);
-  for (let i = 0; i < 112 * 112; i++) {
-    const rgb = i < 6000 ? [40, 105, 205] : i < 9500 ? [45, 170, 70] : [215, 80, 45];
+  const pixels = new Uint8ClampedArray(256 * 144 * 4);
+  for (let i = 0; i < 256 * 144; i++) {
+    const rgb = i < 18000 ? [40, 105, 205] : i < 28000 ? [45, 170, 70] : [215, 80, 45];
     pixels.set([...rgb, 255], i * 4);
   }
   const canvas = {
@@ -36,9 +36,9 @@ test('one decoded image supplies mode-specific previews and theme changes withou
     getContext(type) {
       assert.equal(type, '2d');
       return {
-        drawImage(_image, x, y, width, height) { assert.deepEqual([x, y, width, height], [0, 0, 112, 112]); },
+        drawImage(_image, x, y, width, height) { assert.deepEqual([x, y, width, height], [0, 0, 256, 144]); },
         getImageData(x, y, width, height) {
-          assert.deepEqual([x, y, width, height], [0, 0, 112, 112]);
+          assert.deepEqual([x, y, width, height], [0, 0, 256, 144]);
           return { data: pixels };
         },
       };
@@ -49,7 +49,7 @@ test('one decoded image supplies mode-specific previews and theme changes withou
     addEventListener() {}, removeEventListener() {}, getElementById() { return null; },
   };
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  globalThis.Image = class { naturalWidth = 1920; naturalHeight = 1080; async decode() {} };
+  globalThis.Image = class { naturalWidth = 256; naturalHeight = 144; async decode() {} };
   t.mock.method(URL, 'createObjectURL', () => 'blob:wallpaper');
   t.mock.method(URL, 'revokeObjectURL', () => {});
   const imageUrl = '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg';
@@ -61,9 +61,9 @@ test('one decoded image supplies mode-specific previews and theme changes withou
   let extractionCount = 0, extracted;
   const instrumentedCore = {
     ...core,
-    extractImagePalettes(data) {
+    extractImagePalettes(data, width, height) {
       extractionCount++;
-      extracted = core.extractImagePalettes(data);
+      extracted = core.extractImagePalettes(data, width, height);
       return extracted;
     },
   };
@@ -93,8 +93,8 @@ test('one decoded image supplies mode-specific previews and theme changes withou
   } finally { clearTimeout(timeout); }
   assert.equal(extractionCount, 1);
   assert.equal(fetch.mock.callCount(), 2);
-  assert.equal(canvas.width, 112);
-  assert.equal(canvas.height, 112);
+  assert.equal(canvas.width, 256);
+  assert.equal(canvas.height, 144);
   assert.deepEqual(writes.at(-1), core.makeTokens(extracted, core.DEFAULTS.strength, 'content'));
 
   const nodes = node => typeof node === 'object' ? [node, ...node.children.flatMap(nodes)] : [];

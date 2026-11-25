@@ -1,6 +1,6 @@
 // Bundled by scripts/build.mjs. No runtime imports except the shared React instance.
 import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from './boot-theme.js';
-import { MARKETPLACE_THEME_CSS, SHELL_WALLPAPER_CSS, pluginPageCSS } from './compatibility.js';
+import { MARKETPLACE_THEME_CSS, SHELL_WALLPAPER_CSS, SYSTEM_TWEAKS_CSS, pluginPageCSS } from './compatibility.js';
 import { wallpaperFilters } from './wallpaper-filter.js';
 import { sidebarBackgroundCSS, sidebarColors, mountSidebarBackground, SIDEBAR_SURFACES } from './sidebar-background.js';
 import { createWeatherController, customEndpoint, WEATHER_PROVIDERS } from './weather.js';
@@ -57,7 +57,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           try { localStorage.removeItem(BOOT_CACHE_KEY); } catch { /* Best-effort startup cache only. */ }
         }
         if (!settings.enabled || !state.url) { tokenDisposer?.(); tokenDisposer = undefined; return; }
-        const tokens = core.makeTokens(settings.dynamic ? state.accent : [112, 112, 112], settings.strength, settings.dynamic ? settings.paletteMode : 'monochrome');
+        const tokens = core.makeTokens(settings.dynamic ? state.accent : [112, 112, 112], settings.strength, settings.dynamic ? settings.paletteMode : 'monochrome', settings.dynamic ? settings.textColorMode : 'theme', settings.dynamic ? { pureBlackDark: settings.pureBlackDark, systemTweaks: settings.systemTweaks } : {});
         if (!settings.dynamic) for (const key of Object.keys(tokens)) if (key !== '--dsw-alias-bg-base') delete tokens[key];
         const previous = tokenDisposer;
         tokenDisposer = ctx.theme.overrideTokens(SOURCE, tokens);
@@ -102,11 +102,15 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
             signal.addEventListener('abort', onAbort, { once: true });
           })]);
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const canvas = document.createElement('canvas'); canvas.width = 112; canvas.height = 112;
+          const naturalWidth = image.naturalWidth || 112, naturalHeight = image.naturalHeight || 112;
+          const scale = Math.min(1, 3840 / Math.max(naturalWidth, naturalHeight));
+          const width = Math.max(1, Math.round(naturalWidth * scale));
+          const height = Math.max(1, Math.round(naturalHeight * scale));
+          const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
           const context = canvas.getContext('2d', { willReadFrequently: true });
           if (!context) throw new Error('Canvas unavailable');
-          context.drawImage(image, 0, 0, 112, 112);
-          const accent = core.extractImagePalettes(context.getImageData(0, 0, 112, 112).data);
+          context.drawImage(image, 0, 0, width, height);
+          const accent = core.extractImagePalettes(context.getImageData(0, 0, width, height).data, width, height);
           return { url, accent, photo: image, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight };
         } catch (error) { URL.revokeObjectURL(url); throw error; }
         finally { if (onAbort) signal.removeEventListener('abort', onAbort); }
@@ -205,8 +209,8 @@ ${PALETTE_PREVIEW_CSS}
         const { windKmh, windDegrees } = (mode === 'location' && s.observation) || {};
         const look = weatherLooks[condition];
         const active = Boolean(look);
-        const colors = React.useMemo(() => core.makeTokens(s.settings.dynamic ? s.accent : [112, 112, 112], s.settings.strength, s.settings.dynamic ? s.settings.paletteMode : 'monochrome'),
-          [s.accent, s.settings.strength, s.settings.dynamic, s.settings.paletteMode]);
+        const colors = React.useMemo(() => core.makeTokens(s.settings.dynamic ? s.accent : [112, 112, 112], s.settings.strength, s.settings.dynamic ? s.settings.paletteMode : 'monochrome', s.settings.dynamic ? s.settings.textColorMode : 'theme', s.settings.dynamic ? { pureBlackDark: s.settings.pureBlackDark, systemTweaks: s.settings.systemTweaks } : {}),
+          [s.accent, s.settings.strength, s.settings.dynamic, s.settings.paletteMode, s.settings.textColorMode, s.settings.pureBlackDark, s.settings.systemTweaks]);
         const backdrop = React.useMemo(() => active ? weatherBackdrop(s.settings, colors, s.scheme) : null,
           [active, s.settings, colors, s.scheme]);
         const engine = React.useRef(null);
@@ -292,7 +296,7 @@ ${PALETTE_PREVIEW_CSS}
         const parallaxCSS = parallaxActive
           ? 'html[data-bdt-parallax-active]::before{display:none}html[data-bdt-parallax-active] [data-bdt-sidebar-image]{background-image:none!important}[data-bdt-sidebar-image]>[data-bdt-sidebar-canvas]{display:block;width:100%;height:100%;pointer-events:none}'
           : '';
-        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${parallaxCSS}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
+        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${parallaxCSS}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${s.settings.dynamic && s.settings.systemTweaks ? SYSTEM_TWEAKS_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
       }
       function WeatherForm({ config, observation, status, row }) {
         const [draft, setDraft] = React.useState(config);
@@ -388,10 +392,10 @@ ${PALETTE_PREVIEW_CSS}
               }), h('output', { htmlFor: id('filterAmount') }, `${sidebar.filterAmounts[sidebar.filterMode]}${option.unit}`), `filterAmount.${sidebar.filterMode}`),
               scopedRow('toolbar', h('input', { id: id('toolbar'), type: 'checkbox', checked: sidebar.toolbar, onChange: e => change({ toolbar: e.target.checked }) }), null, 'sidebarToolbar')));
         };
-        const tokens = React.useMemo(() => core.makeTokens(prefs.dynamic ? s.accent : [112, 112, 112], prefs.strength, prefs.dynamic ? prefs.paletteMode : 'monochrome'), [s.accent, prefs.strength, prefs.paletteMode, prefs.dynamic]);
+        const tokens = React.useMemo(() => core.makeTokens(prefs.dynamic ? s.accent : [112, 112, 112], prefs.strength, prefs.dynamic ? prefs.paletteMode : 'monochrome', prefs.dynamic ? prefs.textColorMode : 'theme', prefs.dynamic ? { pureBlackDark: prefs.pureBlackDark, systemTweaks: prefs.systemTweaks } : {}), [s.accent, prefs.strength, prefs.paletteMode, prefs.dynamic, prefs.textColorMode, prefs.pureBlackDark, prefs.systemTweaks]);
         // Each option previews its own real palette. Selection/theme changes
         // must not recalculate all ten paired palettes or fetch another image.
-        const palettes = React.useMemo(() => core.PALETTE_MODES.map(mode => ({ mode, tokens: core.makeTokens(s.accent, prefs.strength, mode) })), [s.accent, prefs.strength]);
+        const palettes = React.useMemo(() => core.PALETTE_MODES.map(mode => ({ mode, tokens: core.makeTokens(s.accent, prefs.strength, mode, prefs.textColorMode, { pureBlackDark: prefs.pureBlackDark, systemTweaks: prefs.systemTweaks }) })), [s.accent, prefs.strength, prefs.textColorMode, prefs.pureBlackDark, prefs.systemTweaks]);
         const paletteGroup = React.useId();
         const copyrightUrl = typeof s.meta?.copyrightUrl === 'string' && /^https:\/\/(?:www|cn)\.bing\.com\//.test(s.meta.copyrightUrl) ? s.meta.copyrightUrl : 'https://www.bing.com/';
         return h('section', { className: 'bdt-page', 'aria-label': t('title') },
@@ -440,6 +444,10 @@ ${PALETTE_PREVIEW_CSS}
             row('strength', h('input', { id: 'bdt-strength', type: 'range', min: 10, max: 100, step: 1, value: prefs.strength, 'aria-valuetext': `${prefs.strength}%`, onChange: e => update({ strength: Number(e.target.value) }) }), h('output', { htmlFor: 'bdt-strength' }, `${prefs.strength}%`)),
             ...['leftSidebar', 'rightSidebar'].map(sidebarControls),
             row('dynamic', checkbox('dynamic')),
+            row('textColorMode', h('select', { id: 'bdt-textColorMode', className: 'bdt-wallpaper-select', value: prefs.textColorMode, disabled: !prefs.dynamic, onChange: e => update({ textColorMode: e.target.value }) },
+              ...core.TEXT_COLOR_MODES.map(mode => h('option', { key: mode, value: mode }, t(`textColorMode.${mode}`))))),
+            row('pureBlackDark', h('input', { id: 'bdt-pureBlackDark', type: 'checkbox', checked: prefs.pureBlackDark, disabled: !prefs.dynamic, onChange: e => update({ pureBlackDark: e.target.checked }) })),
+            row('systemTweaks', h('input', { id: 'bdt-systemTweaks', type: 'checkbox', checked: prefs.systemTweaks, disabled: !prefs.dynamic, onChange: e => update({ systemTweaks: e.target.checked }) })),
             h('fieldset', { className: 'bdt-palette-group', disabled: !prefs.dynamic },
               h('legend', null, t('paletteMode')),
               h('div', { className: 'bdt-palette-grid' }, ...palettes.map(({ mode, tokens: previewTokens }) =>

@@ -31,9 +31,9 @@ test('all ten previews use each mode’s own paired roles, not the currently sel
   }
 });
 
-test('preview text and chat surfaces remain readable in both schemes at visibility endpoints', () => {
+test('preview text and chat surfaces remain readable in high-contrast mode at visibility endpoints', () => {
   for (const mode of PALETTE_MODES) for (const strength of [10, 28, 100]) {
-    const tokens = makeTokens([198, 109, 37], strength, mode);
+    const tokens = makeTokens([198, 109, 37], strength, mode, 'high-contrast');
     for (const scheme of ['light', 'dark']) {
       const style = palettePreviewStyle(tokens, scheme);
       const c = role => rgb(style[`--bdt-mini-${role}`]);
@@ -46,6 +46,10 @@ test('preview text and chat surfaces remain readable in both schemes at visibili
       assert.ok(contrast(c('on-brand'), c('brand')) >= 4.5, `${context}/primary-action`);
     }
   }
+  assert.notDeepEqual(
+    palettePreviewStyle(makeTokens([22, 144, 187], 28, 'content', 'theme'), 'light'),
+    palettePreviewStyle(makeTokens([22, 144, 187], 28, 'content', 'high-contrast'), 'light'),
+  );
 });
 
 test('current scheme and new image colors change preview styles without leaking CSS roles', () => {
@@ -102,7 +106,7 @@ test('grid adapts to container width and memoization does not depend on selected
   const source = await read('client-main.js');
   assert.match(source, /grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,180px\),1fr\)\)/);
   assert.match(source, /\.bdt-palette-name\{[^}]+overflow-wrap:anywhere/);
-  assert.match(source, /const palettes = React\.useMemo\(\(\) => core\.PALETTE_MODES\.map\(mode => \(\{ mode, tokens: core\.makeTokens\(s\.accent, prefs\.strength, mode\) \}\)\), \[s\.accent, prefs\.strength\]\)/);
+  assert.match(source, /const palettes = React\.useMemo\(\(\) => core\.PALETTE_MODES\.map\(mode => \(\{ mode, tokens: core\.makeTokens\(s\.accent, prefs\.strength, mode, prefs\.textColorMode, \{ pureBlackDark: prefs\.pureBlackDark, systemTweaks: prefs\.systemTweaks \}\) \}\)\), \[s\.accent, prefs\.strength, prefs\.textColorMode, prefs\.pureBlackDark, prefs\.systemTweaks\]\)/);
   assert.match(source, /renderPaletteMiniature\(h, previewTokens\)/);
   const manifest = JSON.parse(await read('package.json'));
   assert.ok(manifest.files.includes('client.js'));

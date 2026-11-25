@@ -52,3 +52,7 @@ ${templates}{${Object.entries(templateTheme).map(([key, alias]) => `--${key}:var
 export function pluginPageCSS(dynamic) {
   return dynamic ? pageWallpaper + pageTheme : pageWallpaper;
 }
+
+// Opt-in system tweaks for third-party plugins that write default hardcoded
+// accent colors inline (e.g. dsh-quick-prompts's #4D6BFE default chip).
+export const SYSTEM_TWEAKS_CSS = `body .qp-chip[style*="#4D6BFE" i]{--chip-color:var(--dsw-alias-brand-primary)!important}`;

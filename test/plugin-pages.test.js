@@ -38,7 +38,7 @@ test('themed card and template foreground/background pairs retain contrast', () 
   const rgb = value => value.match(/\d+/g).map(Number);
   const mix = (base, top, opacity) => base.map((v, i) => v * (1 - opacity) + top[i] * opacity);
   for (const mode of PALETTE_MODES) for (const accent of [[190, 38, 44], [20, 95, 210], [128, 255, 255], [92, 116, 132]]) {
-    const tokens = makeTokens(accent, 100, mode);
+    const tokens = makeTokens(accent, 100, mode, 'high-contrast');
     for (const scheme of ['light', 'dark']) {
       const get = role => rgb(tokens[`--dsw-alias-${role}`][scheme]);
       const surface = get('bg-layer-1');

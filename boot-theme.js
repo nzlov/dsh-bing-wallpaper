@@ -16,15 +16,18 @@ export function makeBootCache(settings, tokens, imageUrl) {
   for (const scheme of ['light', 'dark']) {
     colors[scheme] = Object.fromEntries(Object.entries(keys).map(([role, key]) => [role, tokens[key][scheme]]));
   }
-  return { version: 3, market: settings.market || 'zh-CN', resolution: settings.resolution || '1080p', paletteMode: settings.paletteMode, strength: settings.strength, colors, imageUrl };
+  return { version: 3, market: settings.market || 'zh-CN', resolution: settings.resolution || '1080p', paletteMode: settings.paletteMode, textColorMode: settings.textColorMode || 'theme', pureBlackDark: Boolean(settings.pureBlackDark), strength: settings.strength, colors, imageUrl };
 }
 
 // This pure function is also embedded verbatim in the Host's early script.
 // All persisted values are untrusted: no arbitrary CSS or URL interpolation.
 export function bootThemeCSS(settings, cache, now, systemDark, followDark, renderFilter = wallpaperFilters.css) {
-  settings ??= { enabled: true, dynamic: true, paletteMode: 'content', mode: 'schedule', day: '07:00', night: '19:00', strength: 28 };
+  settings ??= { enabled: true, dynamic: true, paletteMode: 'content', textColorMode: 'theme', pureBlackDark: false, mode: 'schedule', day: '07:00', night: '19:00', strength: 28 };
   if (!settings || settings.enabled !== true || settings.dynamic !== true || !cache || cache.version !== 3
-      || cache.paletteMode !== settings.paletteMode || cache.strength !== settings.strength
+      || cache.paletteMode !== settings.paletteMode
+      || (cache.textColorMode ?? 'theme') !== (settings.textColorMode ?? 'theme')
+      || Boolean(cache.pureBlackDark) !== Boolean(settings.pureBlackDark)
+      || cache.strength !== settings.strength
       || !['zh-CN', 'en-US'].includes(settings.market ?? 'zh-CN') || (cache.market ?? 'zh-CN') !== (settings.market ?? 'zh-CN')
       || !['1080p', '2k', '4k'].includes(settings.resolution ?? '1080p') || (cache.resolution ?? '1080p') !== (settings.resolution ?? '1080p')
       || !Number.isFinite(settings.strength) || settings.strength < 10 || settings.strength > 100) return '';

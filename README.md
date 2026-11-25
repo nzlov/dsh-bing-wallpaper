@@ -10,9 +10,11 @@ Daily Bing wallpapers, image-derived theme colours, and automatic light/dark app
 
 - China and international (US) Bing sources, with selectable 1080p, 2K (2560×1440) and 4K UHD (3840×2160) resolutions, separate caches and no automatic cross-source fallback.
 - Ten colour styles: M3 Content, M3 Tonal Spot, M3 Fruit Salad, M3 Rainbow, M3 Monochrome, Vibrant, Faithful, Soft, Dysfunctional, and Muted.
-- M3 styles use a ranked image seed; the five custom styles cluster multiple image colours and select candidates by style. Their colour generation is adapted from Noctalia, with browser sampling, candidate selection, and DSH readability adjustments, so results are not pixel-identical.
+- M3 styles align with Noctalia’s `112×112` Triangle downsampling and deterministic Matugen-order quantization/scoring; the five custom styles use `112×112` Box downsampling and cluster multiple image colours by style.
+- Full DSH UI token mapping following Noctalia’s Qt6CT/GTK/Kitty/Helix/btop role mappings (surfaces, controls, business/status accents, diffs, charts, illustrations, onboarding gradients, JSON tree, and Shiki syntax highlighting) without secondary surface mixing.
+- Configurable **Text colouring** (**Theme**: wallpaper-tinted text and pure Noctalia palette roles; **High contrast**: neutral high-contrast text, Material-harmonized semantic/diff/syntax hues, and WCAG contrast enforcement), **Pure black dark mode** (Noctalia `applyPureBlackDark` OLED surface ramp), and opt-in **System tweaks** (masks, toolbar overlays, shared `label-on-color`, macOS vibrancy washes, and default-blue `dsh-quick-prompts` chips).
 - Clickable palette cards show light and dark previews separated by a diagonal line.
-- Linear wallpaper visibility from 10% to 100%, without a fixed reading overlay. Icons and semantic status colours are not recoloured.
+- Linear wallpaper visibility from 10% to 100%, without a fixed reading overlay.
 - Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength. Filters update the background live; the settings preview and theme extraction use the original image.
 - Optional 3D depth parallax powered by WebGL (with Catmull-Rom bicubic upscaling, WebGL2 trilinear mipmaps, and smoothed depth warping), shared across the main wallpaper and wallpaper-backed sidebars via a single `0–100%` intensity slider (`0` = off). Stays zero-dependency by default; the slider activates once `@huggingface/transformers` is installed in the DSH profile and pauses under reduced motion.
 - Main pages, sidebars and the startup screen use dedicated wallpaper filter layers over a solid-colour fallback. Page content, document images and charts are not filtered.
