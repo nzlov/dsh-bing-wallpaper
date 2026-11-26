@@ -20,7 +20,7 @@
     ".": "./src/server/index.js",
     "./client": "./dist/client.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./assets/icon.svg"
+    "./icon": "./icon.svg"
   },
   "files": [
     "src/server",
@@ -30,7 +30,7 @@
     "locale/*.json",
     "README.md",
     "README.zh-CN.md",
-    "assets/icon.svg",
+    "icon.svg",
     "LICENSE",
     "third-party"
   ],

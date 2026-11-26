@@ -369,6 +369,8 @@ test('public npm bundle uses one package identity and ships its runtime exports'
   assert.equal(typeof registration.factory, 'function');
   assert.ok((await read('cordis.patch.yml')).includes(`name: '${manifest.name}'`));
   assert.ok((await read('src/client/client-main.js')).includes(`SOURCE = '${manifest.name}'`));
+  assert.equal(manifest.exports['./icon'], './icon.svg');
+  assert.ok(manifest.files.includes('icon.svg'));
   for (const key of ['.', './client', './icon']) assert.ok((await stat(new URL(`../${manifest.exports[key]}`, import.meta.url))).isFile(), key);
   assert.doesNotMatch(client, /@local\/dsh-bing-daily-theme/);
 });
