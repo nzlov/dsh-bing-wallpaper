@@ -198,14 +198,15 @@ test('retained tabs, sessions and dock/float migrations refresh layers on marker
   dispose();
 });
 
-test('the aligned main filter compensates its blur bleed without changing the shared image crop', async () => {
+test('the aligned main filter centers the cover with or without a measured size', async () => {
   const css = wallpaperFilters.css({
     selector: 'html', image: 'url("photo")', overlays: ['rgba(255, 255, 255, 0.56)'],
     settings: { filterMode: 'blur', filterAmounts: { blur: 12 } }, fixed: true, aligned: true,
   });
   assert.ok(css.includes('inset:-36px'));
+  assert.ok(css.includes('background:url("photo") center/cover no-repeat'));
   assert.ok(css.includes('background-size:var(--bdt-wallpaper-size,cover)'));
-  assert.ok(css.includes('background-position:calc(var(--bdt-wallpaper-x,0px) + 36px) calc(var(--bdt-wallpaper-y,0px) + 36px)'));
+  assert.ok(css.includes('background-position:calc(var(--bdt-wallpaper-x,50% - 36px) + 36px) calc(var(--bdt-wallpaper-y,50% - 36px) + 36px)'));
   assert.ok(css.includes('filter:blur(12px)'));
   const result = await transform(css, { loader: 'css' });
   assert.deepEqual(result.warnings, []);
