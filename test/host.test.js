@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, isBingImageId } from '../bing-source.js'
-import { encodeDepthPayload } from '../depth-service.js'
-import { apply, createResources, inject } from '../index.js'
+import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, isBingImageId } from '../src/server/bing-source.js'
+import { encodeDepthPayload } from '../src/server/depth-service.js'
+import { apply, createResources, inject } from '../src/server/index.js'
 
 const ID = 'OHR.LakeBled_ZH-CN1234567890_1920x1080.jpg'
 const OTHER_ID = 'OHR.Forest_ZH-CN9876543210_1920x1080.jpg'

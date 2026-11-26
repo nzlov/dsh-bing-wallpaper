@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { Script } from 'node:vm';
 import { transform } from 'esbuild';
-import { createWallpaperFilters, wallpaperFilters as filters } from '../wallpaper-filter.js';
-import { DEFAULTS, normalizeSettings, makeTokens } from '../palette.js';
-import { bootThemeCSS, bootThemeInjection, makeBootCache } from '../boot-theme.js';
+import { createWallpaperFilters, wallpaperFilters as filters } from '../src/shared/wallpaper-filter.js';
+import { DEFAULTS, normalizeSettings, makeTokens } from '../src/client/theme/palette.js';
+import { bootThemeCSS, bootThemeInjection, makeBootCache } from '../src/shared/boot-theme.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const photo = 'url("blob:https://example.test/test-image")';
@@ -79,7 +79,7 @@ test('startup keeps the same stored filter for both Follow themes and ignores un
 });
 
 test('both locales name each filter and adjustment; settings preview keeps the original image', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   for (const lang of ['en', 'zh']) {
     const dictionary = JSON.parse(await read(`locale/${lang}.json`));
     for (const mode of filters.modes) assert.ok(dictionary[`filter.${mode}`]);
@@ -101,8 +101,8 @@ test('both locales name each filter and adjustment; settings preview keeps the o
   assert.doesNotMatch(source, /bdt-preview-tint|filter: look\?\.filter/);
   assert.match(source, /extractImagePalettes\(context\.getImageData/);
   const manifest = JSON.parse(await read('package.json'));
-  assert.ok(manifest.files.includes('wallpaper-filter.js'));
-  const client = (await read('client.js')).replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  assert.ok(manifest.files.includes('src/shared'));
+  const client = (await read('dist/client.js')).replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
   for (const token of ['bdt-preview-image', 'bdt-filter-range', 'Background filter', '背景滤镜', '模糊（Blur）', 'Frosted glass']) assert.ok(client.includes(token), token);
   assert.ok(!client.includes('bdt-preview-tint'));
 });

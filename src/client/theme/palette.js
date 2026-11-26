@@ -3,14 +3,14 @@ import {
   SchemeContent, SchemeTonalSpot, SchemeFruitSalad, SchemeRainbow, SchemeMonochrome,
 } from '@material/material-color-utilities';
 import { makeCustomSchemes } from './custom-palette.js';
-import { wallpaperFilters } from './wallpaper-filter.js';
-import { normalizeWeather } from './weather.js';
-import { normalizeSidebar } from './sidebar-background.js';
-import { DEFAULT_STRENGTH, normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
-import { normalizeParallax } from './wallpaper-parallax.js';
+import { wallpaperFilters } from '../../shared/wallpaper-filter.js';
+import { normalizeWeather } from '../weather/weather.js';
+import { normalizeSidebar } from '../wallpaper/sidebar-background.js';
+import { DEFAULT_STRENGTH, normalizeStrength, backgroundAlpha } from '../wallpaper/wallpaper-visibility.js';
+import { normalizeParallax } from '../wallpaper/wallpaper-parallax.js';
 
 export { extractImagePalettes } from './image-palette.js';
-export { normalizeStrength, backgroundAlpha } from './wallpaper-visibility.js';
+export { normalizeStrength, backgroundAlpha } from '../wallpaper/wallpaper-visibility.js';
 
 // Pure image-colour and scheduling logic; shared by browser bundle and tests.
 export const PALETTE_MODES = Object.freeze(['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted']);

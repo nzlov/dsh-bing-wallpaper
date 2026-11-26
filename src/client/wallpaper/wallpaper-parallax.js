@@ -1,5 +1,5 @@
 import { wallpaperGeometry } from './wallpaper-alignment.js';
-import { wallpaperFilters } from './wallpaper-filter.js';
+import { wallpaperFilters } from '../../shared/wallpaper-filter.js';
 
 export const DEFAULT_PARALLAX_STRENGTH = 45;
 

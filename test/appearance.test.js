@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAppearanceController } from '../appearance.js';
-import { DEFAULTS, scheduledScheme } from '../palette.js';
+import { createAppearanceController } from '../src/client/theme/appearance.js';
+import { DEFAULTS, scheduledScheme } from '../src/client/theme/palette.js';
 function setup(preference = 'system') {
   let controller, external = 0;
   const theme = { getTheme: () => ({ preference }), setTheme: next => { preference = next; controller.changed({ preference }); } };

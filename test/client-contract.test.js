@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
-import * as core from '../palette.js';
-import { createPlugin } from '../client-main.js';
-import { PREFERENCES_KEY } from '../boot-theme.js';
+import * as core from '../src/client/theme/palette.js';
+import { createPlugin } from '../src/client/client-main.js';
+import { PREFERENCES_KEY } from '../src/shared/boot-theme.js';
 const { PALETTE_MODES, makeTokens, contrast } = core;
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 test('both locales label the ten palettes without removed help text or original mode', async () => {
@@ -18,7 +18,7 @@ test('both locales label the ten palettes without removed help text or original 
   }
 });
 test('simplified controls retain labels and values without dangling help references', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   assert.match(source, /core\.makeTokens\(settings\.dynamic[^;]+settings\.paletteMode/);
   assert.match(source, /core\.makeTokens\(prefs\.dynamic[^;]+prefs\.strength[^;]+prefs\.paletteMode/);
   assert.match(source, /core\.PALETTE_MODES\.map/);
@@ -35,20 +35,20 @@ test('simplified controls retain labels and values without dangling help referen
   assert.doesNotMatch(source, /require\(['"]@deepseek-ai\//);
 });
 test('wallpaper has no fixed readability scrim and dynamic-off releases every colour override', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   const wallpaper = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
   assert.doesNotMatch(wallpaper, /wallpaperShade/);
   assert.match(source, /if \(!settings\.dynamic\) for \(const key of Object\.keys\(tokens\)\) if \(key !== '--dsw-alias-bg-base'\) delete tokens\[key\]/);
   assert.match(source, /if \(!settings\.enabled \|\| !state\.url\) \{ tokenDisposer\?\.\(\)/);
 });
 test('wallpaper applies browser-local sidebar backgrounds only while enabled with a decoded photo', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   const wallpaper = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
   assert.match(wallpaper, /if \(!s\.settings\.enabled \|\| !s\.url\) return null;[\s\S]+sidebarBackgroundCSS\(\{ settings: s\.settings, image, overlays: \[\], matte, base \}\)/);
   assert.match(wallpaper, /sidebarColors\(colors, s\.scheme\)/);
   assert.match(wallpaper, /alignWallpaper\(\{\s+document, window, surfaces: SIDEBAR_SURFACES/);
   assert.match(wallpaper, /mountBackground: surface => mountSidebarBackground\(document, surface, active\)/);
-  const bundle = await read('client.js');
+  const bundle = await read('dist/client.js');
   assert.ok(bundle.includes('leftSidebar') && bundle.includes('rightSidebar') && bundle.includes('data-dockkit-strip'), 'prebuilt client includes sidebar controls and chrome styling');
 });
 
@@ -338,7 +338,7 @@ test('palette sidebar colour preserves text and control contrast in both schemes
 });
 test('prebuilt artifact ships ten modes without removed help copy', async () => {
   const manifest = JSON.parse(await read('package.json'));
-  const client = await read('client.js');
+  const client = await read('dist/client.js');
   assert.match(client, /__ModuleLoader__\.load/);
   for (const key of Object.keys(makeTokens([180, 92, 30], 100, 'content'))) assert.ok(client.includes(key), `${key} missing from built UI`);
   for (const mode of PALETTE_MODES) assert.ok(client.includes(`palette.${mode}`), `${mode} missing from built UI`);
@@ -348,15 +348,15 @@ test('prebuilt artifact ships ten modes without removed help copy', async () => 
   assert.deepEqual(Object.keys(manifest.dependencies || {}), []);
   assert.deepEqual(Object.keys(manifest.optionalDependencies || {}), []);
   assert.deepEqual(Object.keys(manifest.peerDependencies || {}), []);
-  assert.ok(manifest.files.includes('depth-service.js'));
+  assert.ok(manifest.files.includes('src/server'));
   assert.ok(manifest.files.includes('third-party'));
-  for (const path of ['THIRD_PARTY_NOTICES.md','third-party/material-color-utilities-LICENSE.txt', 'third-party/noctalia-LICENSE.txt']) assert.ok((await stat(new URL(`../${path}`, import.meta.url))).isFile());
+  for (const path of ['third-party/NOTICES.md','third-party/material-color-utilities-LICENSE.txt', 'third-party/noctalia-LICENSE.txt']) assert.ok((await stat(new URL(`../${path}`, import.meta.url))).isFile());
   assert.match(await read('third-party/material-color-utilities-LICENSE.txt'), /Apache License/);
   assert.match(await read('third-party/noctalia-LICENSE.txt'), /Copyright \(c\) 2026 noctalia-dev/);
 });
 test('public npm bundle uses one package identity and ships its runtime exports', async () => {
   const manifest = JSON.parse(await read('package.json'));
-  const client = await read('client.js');
+  const client = await read('dist/client.js');
   const { runInNewContext } = await import('node:vm');
   let registration;
   runInNewContext(client, { window: { __ModuleLoader__: { load(value) { registration = value; } } } }, { timeout: 1000 });
@@ -368,13 +368,13 @@ test('public npm bundle uses one package identity and ships its runtime exports'
   assert.equal(registration.id, manifest.name);
   assert.equal(typeof registration.factory, 'function');
   assert.ok((await read('cordis.patch.yml')).includes(`name: '${manifest.name}'`));
-  assert.ok((await read('client-main.js')).includes(`SOURCE = '${manifest.name}'`));
+  assert.ok((await read('src/client/client-main.js')).includes(`SOURCE = '${manifest.name}'`));
   for (const key of ['.', './client', './icon']) assert.ok((await stat(new URL(`../${manifest.exports[key]}`, import.meta.url))).isFile(), key);
   assert.doesNotMatch(client, /@local\/dsh-bing-daily-theme/);
 });
 
 test('photo overlay keeps metadata and one accessible top-right refresh action', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   const figure = source.slice(source.indexOf("h('figure', { className: 'bdt-photo'"), source.indexOf("h('span', { className: 'bdt-photo-status'"));
   for (const part of ["h('figcaption'", 'bdt-photo-heading', 'bdt-photo-date', 'bdt-photo-details', 'copyrightUrl', 'bdt-swatches', 'bdt-photo-refresh']) assert.ok(figure.includes(part), part);
   assert.match(figure, /s\.meta\.title \|\| t\('preview'\)/);
@@ -409,7 +409,7 @@ test('overlay and refresh ink remain readable over photo extremes in both scheme
 });
 
 test('market selection, feedback and refresh labels use matching bilingual dictionaries', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   const dictionaries = await Promise.all(['en', 'zh'].map(async lang => JSON.parse(await read(`locale/${lang}.json`))));
   assert.doesNotMatch(source, /[\u3400-\u9fff]/, 'no hardcoded Chinese interface copy');
   for (const [, key] of source.matchAll(/\bt\('([^']+)'\)/g)) {
@@ -426,7 +426,7 @@ test('market selection, feedback and refresh labels use matching bilingual dicti
 });
 
 test('source changes cancel obsolete work and cannot reuse or mislabel another market cache', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   assert.match(source, /sourceChanged = next\.market !== settings\.market/);
   assert.match(source, /if \(sourceChanged\) \{[^}]+generation\+\+; controller\?\.abort\(\); lastCheck = 0; lastDay = '';/);
   assert.match(source, /else if \(!wasEnabled \|\| sourceChanged\) void refresh\(\)/);

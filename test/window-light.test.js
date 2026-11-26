@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { windowLightOrbit } from '../window-light.js';
+import { windowLightOrbit } from '../src/client/weather/window-light.js';
 
 const at = (hour, minute = 0, date = 24) => new Date(2026, 10, date, hour, minute);
 

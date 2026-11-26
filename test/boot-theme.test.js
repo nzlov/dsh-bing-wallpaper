@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Script, runInNewContext } from 'node:vm';
 import { readFile } from 'node:fs/promises';
-import { BOOT_CACHE_KEY, BOOT_STYLE_ID, PREFERENCES_KEY, makeBootCache, bootThemeCSS, bootThemeInjection } from '../boot-theme.js';
-import { MARKETPLACE_THEME_CSS } from '../compatibility.js';
-import { wallpaperFilters } from '../wallpaper-filter.js';
-import { DEFAULTS, PALETTE_MODES, makeTokens, contrast, backgroundAlpha } from '../palette.js';
+import { BOOT_CACHE_KEY, BOOT_STYLE_ID, PREFERENCES_KEY, makeBootCache, bootThemeCSS, bootThemeInjection } from '../src/shared/boot-theme.js';
+import { MARKETPLACE_THEME_CSS } from '../src/client/compatibility.js';
+import { wallpaperFilters } from '../src/shared/wallpaper-filter.js';
+import { DEFAULTS, PALETTE_MODES, makeTokens, contrast, backgroundAlpha } from '../src/client/theme/palette.js';
 
 const BOOT_SCRIPT = bootThemeInjection().text;
 const imageUrl = '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg';
@@ -153,7 +153,7 @@ test('market adapter pairs all four local roles without changing warning, media 
 });
 
 test('main shell mount, not plugin apply or network success, removes the startup bridge', async () => {
-  const source = await readFile(new URL('../client-main.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/client/client-main.js', import.meta.url), 'utf8');
   const start = source.indexOf('function Wallpaper()'), end = source.indexOf('function Settings()', start);
   const component = source.slice(start, end);
   assert.match(component, /React\.useEffect\(\(\) => \{ document\.getElementById\(BOOT_STYLE_ID\)\?\.remove\(\); \}, \[\]\)/);

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import * as core from '../palette.js';
-import { createPlugin } from '../client-main.js';
-import { createAppearanceController } from '../appearance.js';
-import { BOOT_CACHE_KEY, PREFERENCES_KEY } from '../boot-theme.js';
+import * as core from '../src/client/theme/palette.js';
+import { createPlugin } from '../src/client/client-main.js';
+import { createAppearanceController } from '../src/client/theme/appearance.js';
+import { BOOT_CACHE_KEY, PREFERENCES_KEY } from '../src/shared/boot-theme.js';
 
 test('one decoded image supplies mode-specific previews and theme changes without another fetch', async t => {
   const globals = ['localStorage', 'document', 'window', 'Image'];

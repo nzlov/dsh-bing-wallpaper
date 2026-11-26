@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWeatherEngine } from '../precipitation.js';
-import { weatherBackdrop } from '../weather-backdrop.js';
-import { weatherLooks } from '../weather-effects.js';
+import { createWeatherEngine } from '../src/client/weather/precipitation.js';
+import { weatherBackdrop } from '../src/client/weather/weather-backdrop.js';
+import { weatherLooks } from '../src/client/weather/weather-effects.js';
 
 test('disabled weather leaves the wallpaper canvas untouched', () => {
   let calls = 0;

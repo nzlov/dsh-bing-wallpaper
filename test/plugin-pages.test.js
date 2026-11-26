@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { transform } from 'esbuild';
-import { pluginPageCSS } from '../compatibility.js';
-import { contrast, makeTokens, PALETTE_MODES } from '../palette.js';
+import { pluginPageCSS } from '../src/client/compatibility.js';
+import { contrast, makeTokens, PALETTE_MODES } from '../src/client/theme/palette.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -25,10 +25,10 @@ test('wallpaper integration targets page canvases and leaves overlays and semant
   assert.doesNotMatch(themed, /(?:backdrop-)?filter:|--dsw-alias-state-[\w-]+:|--chart-\d|--lc-(?:member|task)-hue|\.lc-heat|template-library-item|\biframe\b|(?:^|,)table\b/m);
   assert.deepEqual((await transform(themed, { loader: 'css' })).warnings, []);
 
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   const component = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
   assert.match(component, /if \(!s\.settings\.enabled \|\| !s\.url\) return null;[\s\S]+\$\{pluginPageCSS\(s\.settings\.dynamic\)\}/);
-  const bundle = await read('client.js');
+  const bundle = await read('dist/client.js');
   for (const marker of [library, 'table[data-scroll-ready]', '--lc-canvas:transparent', '--lc-control-track:var(--dsw-alias-bg-layer-2)']) {
     assert.ok(bundle.includes(marker), marker);
   }

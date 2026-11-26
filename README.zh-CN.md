@@ -40,7 +40,7 @@ npm run build
 
 随后在 DSH 中使用本目录的绝对路径安装。
 
-启用后打开 **设置 → Bing 每日壁纸**。修改源码后需重新构建；更新已安装的插件时，按插件管理器提示决定是否重启。
+启用后打开 **设置 → Bing 每日壁纸**。源码位于 `src/`。修改源码后重新构建以更新 `dist/client.js`。更新已安装的插件时，按插件管理器提示决定是否重启。
 
 ### 可选 3D 深度视差
 
@@ -77,5 +77,5 @@ dsh plugin --profile web add @huggingface/transformers
 作者：[nzlov](https://github.com/nzlov)。
 
 - 插件代码及原创 SVG 图标采用 [MIT 许可](LICENSE)。
-- Material Color Utilities 采用 Apache-2.0，详见[第三方声明](THIRD_PARTY_NOTICES.md)及[附带许可](third-party/material-color-utilities-LICENSE.txt)。
+- Material Color Utilities 采用 Apache-2.0，详见[第三方声明](third-party/NOTICES.md)及[附带许可](third-party/material-color-utilities-LICENSE.txt)。
 - 图片版权归 Bing 及原摄影作者所有。插件许可不包含图片的再分发或商业使用授权，请遵守每张图片所附版权链接中的条款。

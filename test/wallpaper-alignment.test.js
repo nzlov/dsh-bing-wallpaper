@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { transform } from 'esbuild';
-import { wallpaperGeometry, alignWallpaper } from '../wallpaper-alignment.js';
-import { wallpaperFilters } from '../wallpaper-filter.js';
+import { wallpaperGeometry, alignWallpaper } from '../src/client/wallpaper/wallpaper-alignment.js';
+import { wallpaperFilters } from '../src/shared/wallpaper-filter.js';
 
 test('one viewport cover preserves image proportions across desktop and mobile breakpoints', () => {
   for (const [vw, vh] of [[3019, 1389], [2175, 1927], [709, 1511], [767, 900], [768, 900], [1023, 900], [1024, 900]]) {

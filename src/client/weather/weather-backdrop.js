@@ -1,6 +1,6 @@
-import { normalizeSidebar, SIDEBAR_COLOR_ROLE, SIDEBAR_TINT_ALPHA } from './sidebar-background.js';
-import { wallpaperFilters } from './wallpaper-filter.js';
-import { backgroundAlpha } from './wallpaper-visibility.js';
+import { normalizeSidebar, SIDEBAR_COLOR_ROLE, SIDEBAR_TINT_ALPHA } from '../wallpaper/sidebar-background.js';
+import { wallpaperFilters } from '../../shared/wallpaper-filter.js';
+import { backgroundAlpha } from '../wallpaper/wallpaper-visibility.js';
 
 function brightness(red, green, blue) {
   return (.2126 * red + .7152 * green + .0722 * blue) / 255;

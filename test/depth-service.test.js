@@ -9,7 +9,7 @@ import {
   hashImageBytes,
   isDepthRuntimeAvailable,
   isValidDepthPayload,
-} from '../depth-service.js'
+} from '../src/server/depth-service.js'
 
 const JPEG_A = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02, 0xff, 0xd9])
 const JPEG_B = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x03, 0x04, 0xff, 0xd9])

@@ -1,5 +1,5 @@
 import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, MARKET, RESOLUTION, isBingImageId, isBingMarket, isBingResolution } from './bing-source.js'
-import { bootThemeInjection } from './boot-theme.js'
+import { bootThemeInjection } from '../shared/boot-theme.js'
 import { createDepthService } from './depth-service.js'
 
 // The carrier does not authenticate named routes. Connection is a real dependency.

@@ -1,16 +1,16 @@
 // Bundled by scripts/build.mjs. No runtime imports except the shared React instance.
-import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from './boot-theme.js';
+import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from '../shared/boot-theme.js';
 import { MARKETPLACE_THEME_CSS, SHELL_WALLPAPER_CSS, SYSTEM_TWEAKS_CSS, pluginPageCSS } from './compatibility.js';
-import { wallpaperFilters } from './wallpaper-filter.js';
-import { sidebarBackgroundCSS, sidebarColors, mountSidebarBackground, SIDEBAR_SURFACES } from './sidebar-background.js';
-import { createWeatherController, customEndpoint, WEATHER_PROVIDERS } from './weather.js';
-import { createWeatherPane, PRECIPITATION_CANVAS, WEATHER_EFFECTS, WEATHER_LAYOUT_CSS, weatherLooks } from './weather-effects.js';
-import { weatherBackdrop } from './weather-backdrop.js';
-import { createWeatherEngine } from './precipitation.js';
-import { FACING_BEARINGS } from './window-light.js';
-import { alignWallpaper } from './wallpaper-alignment.js';
-import { mountParallaxWallpaper, depthUrlFor } from './wallpaper-parallax.js';
-import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './palette-preview.js';
+import { wallpaperFilters } from '../shared/wallpaper-filter.js';
+import { sidebarBackgroundCSS, sidebarColors, mountSidebarBackground, SIDEBAR_SURFACES } from './wallpaper/sidebar-background.js';
+import { createWeatherController, customEndpoint, WEATHER_PROVIDERS } from './weather/weather.js';
+import { createWeatherPane, PRECIPITATION_CANVAS, WEATHER_EFFECTS, WEATHER_LAYOUT_CSS, weatherLooks } from './weather/weather-effects.js';
+import { weatherBackdrop } from './weather/weather-backdrop.js';
+import { createWeatherEngine } from './weather/precipitation.js';
+import { FACING_BEARINGS } from './weather/window-light.js';
+import { alignWallpaper } from './wallpaper/wallpaper-alignment.js';
+import { mountParallaxWallpaper, depthUrlFor } from './wallpaper/wallpaper-parallax.js';
+import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './theme/palette-preview.js';
 
 const weatherChoices = ['off', 'location', ...WEATHER_EFFECTS];
 

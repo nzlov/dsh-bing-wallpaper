@@ -2,7 +2,7 @@ import {
   DynamicDrawUsage, InstancedBufferAttribute, InstancedMesh, LinearFilter, PlaneGeometry, ShaderMaterial,
   SRGBColorSpace, Texture, Vector2, Vector4,
 } from 'three';
-import { wallpaperGeometry } from './wallpaper-alignment.js';
+import { wallpaperGeometry } from '../wallpaper/wallpaper-alignment.js';
 import { randomSequence } from './weather-effects.js';
 
 const maxImpacts = 42;

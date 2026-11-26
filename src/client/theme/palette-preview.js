@@ -1,6 +1,6 @@
 // A decorative DSH layout thumbnail, not a second working interface. All colors
 // use the actual sidebar/chat/composer roles, scoped to private preview variables.
-import { SIDEBAR_COLOR_ROLE } from './sidebar-background.js';
+import { SIDEBAR_COLOR_ROLE } from '../wallpaper/sidebar-background.js';
 
 const PREVIEW_ROLES = Object.freeze({
   canvas: SIDEBAR_COLOR_ROLE,

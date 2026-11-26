@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWeatherController, currentWeather, normalizeWeather } from '../weather.js';
-import { createAtmosphere } from '../weather-atmosphere.js';
-import { randomSequence, weatherLooks, weatherWind } from '../weather-effects.js';
-import { advanceParticles, createParticles, createPrecipitationObjects } from '../three-precipitation.js';
-import { windowLightOrbit } from '../window-light.js';
+import { createWeatherController, currentWeather, normalizeWeather } from '../src/client/weather/weather.js';
+import { createAtmosphere } from '../src/client/weather/weather-atmosphere.js';
+import { randomSequence, weatherLooks, weatherWind } from '../src/client/weather/weather-effects.js';
+import { advanceParticles, createParticles, createPrecipitationObjects } from '../src/client/weather/three-precipitation.js';
+import { windowLightOrbit } from '../src/client/weather/window-light.js';
 
 function respond(t, documents) {
   const urls = [];

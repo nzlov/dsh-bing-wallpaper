@@ -40,7 +40,7 @@ npm run build
 
 Then install this directory in DSH using its absolute path.
 
-Open **Settings → Bing daily wallpaper**. Rebuild after changing source files; follow Plugin Manager’s restart instructions when updating an installed bundle.
+Open **Settings → Bing daily wallpaper**. Plugin source lives in `src/`. Rebuild to update `dist/client.js`. When updating an installed bundle, follow Plugin Manager’s restart instructions.
 
 ### Optional 3D depth parallax
 
@@ -77,5 +77,5 @@ For a custom provider, enter an HTTPS endpoint that supports browser cross-origi
 Author: [nzlov](https://github.com/nzlov).
 
 - Plugin code and the original SVG icon: [MIT](LICENSE).
-- Material Color Utilities: Apache-2.0; see [third-party notices](THIRD_PARTY_NOTICES.md) and the [included license](third-party/material-color-utilities-LICENSE.txt).
+- Material Color Utilities: Apache-2.0; see [third-party notices](third-party/NOTICES.md) and the [included license](third-party/material-color-utilities-LICENSE.txt).
 - Photographs belong to Bing and the respective photographers. The plugin’s license does not grant rights to redistribute or commercially use those photographs. Follow the copyright link shown on each image.

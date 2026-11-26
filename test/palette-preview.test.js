@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { PALETTE_MODES, makeTokens, contrast } from '../palette.js';
-import { palettePreviewStyle, PALETTE_PREVIEW_CSS } from '../palette-preview.js';
+import { PALETTE_MODES, makeTokens, contrast } from '../src/client/theme/palette.js';
+import { palettePreviewStyle, PALETTE_PREVIEW_CSS } from '../src/client/theme/palette-preview.js';
 const read = name => readFile(new URL(`../${name}`, import.meta.url), 'utf8');
 const ROLES = {
   canvas: '--dsw-specific-sidebar-fill', surface: '--dsw-alias-bg-layer-1', raised: '--dsw-alias-bg-layer-2',
@@ -66,7 +66,7 @@ test('current scheme and new image colors change preview styles without leaking 
 });
 
 test('miniature markup is decorative and contains no fake interactive or focusable controls', async () => {
-  const source = await read('palette-preview.js');
+  const source = await read('src/client/theme/palette-preview.js');
   assert.deepEqual([...new Set([...source.matchAll(/h\('([^']+)'/g)].map(match => match[1]))], ['span', 'svg', 'line']);
   assert.match(source, /className: 'bdt-mini-split', 'aria-hidden': true/);
   assert.match(source, /className: 'bdt-mini-diagonal'[^\n]+focusable: false/);
@@ -77,7 +77,7 @@ test('miniature markup is decorative and contains no fake interactive or focusab
 });
 
 test('aligned full-size light and dark scenes have complementary diagonal clips', async () => {
-  const source = await read('palette-preview.js');
+  const source = await read('src/client/theme/palette-preview.js');
   assert.match(source, /export function renderPaletteMiniature\(h, tokens\)/);
   assert.match(source, /renderScene\(h, tokens, 'light'\), renderScene\(h, tokens, 'dark'\)/);
   assert.match(PALETTE_PREVIEW_CSS, /bdt-mini-split>\.bdt-mini\{position:absolute;inset:0\}/);
@@ -87,7 +87,7 @@ test('aligned full-size light and dark scenes have complementary diagonal clips'
 });
 
 test('native radio group preserves selection, disabling and visible keyboard focus', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   assert.match(source, /h\('fieldset', \{ className: 'bdt-palette-group', disabled: !prefs\.dynamic/);
   assert.match(source, /h\('legend', null, t\('paletteMode'\)\)/);
   assert.match(source, /const paletteGroup = React\.useId\(\)/);
@@ -103,14 +103,14 @@ test('native radio group preserves selection, disabling and visible keyboard foc
 });
 
 test('grid adapts to container width and memoization does not depend on selected mode', async () => {
-  const source = await read('client-main.js');
+  const source = await read('src/client/client-main.js');
   assert.match(source, /grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,180px\),1fr\)\)/);
   assert.match(source, /\.bdt-palette-name\{[^}]+overflow-wrap:anywhere/);
   assert.match(source, /const palettes = React\.useMemo\(\(\) => core\.PALETTE_MODES\.map\(mode => \(\{ mode, tokens: core\.makeTokens\(s\.accent, prefs\.strength, mode, prefs\.textColorMode, \{ pureBlackDark: prefs\.pureBlackDark, systemTweaks: prefs\.systemTweaks \}\) \}\)\), \[s\.accent, prefs\.strength, prefs\.textColorMode, prefs\.pureBlackDark, prefs\.systemTweaks\]\)/);
   assert.match(source, /renderPaletteMiniature\(h, previewTokens\)/);
   const manifest = JSON.parse(await read('package.json'));
-  assert.ok(manifest.files.includes('client.js'));
-  assert.ok(!manifest.files.includes('palette-preview.js'), 'preview source is bundled, not shipped as an extra runtime module');
-  const client = await read('client.js');
+  assert.ok(manifest.files.includes('dist/client.js'));
+  assert.ok(!manifest.files.includes('src/client/theme/palette-preview.js'), 'preview source is bundled, not shipped as an extra runtime module');
+  const client = await read('dist/client.js');
   for (const name of ['bdt-palette-grid', 'bdt-mini-split', 'bdt-mini-diagonal', 'bdt-mini-app', 'bdt-mini-composer', 'bdt-mini-code', 'bdt-palette-choice']) assert.ok(client.includes(name), `${name} missing from prebuilt client`);
 });

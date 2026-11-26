@@ -1,7 +1,7 @@
-import { wallpaperFilters } from './wallpaper-filter.js';
+import { wallpaperFilters } from '../../shared/wallpaper-filter.js';
 import { backgroundAlpha, normalizeStrength } from './wallpaper-visibility.js';
-import { createWeatherPane } from './weather-effects.js';
-import { SHELL_FRAME as frame } from './compatibility.js';
+import { createWeatherPane } from '../weather/weather-effects.js';
+import { SHELL_FRAME as frame } from '../compatibility.js';
 
 export const SIDEBAR_COLOR_ROLE = '--dsw-specific-sidebar-fill';
 export const SIDEBAR_TINT_ALPHA = .6;

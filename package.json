@@ -17,32 +17,28 @@
     "dsh": ">=0.2.2-rc.4 <0.3.0"
   },
   "exports": {
-    ".": "./index.js",
-    "./client": "./client.js",
+    ".": "./src/server/index.js",
+    "./client": "./dist/client.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./assets/icon.svg"
   },
   "files": [
-    "index.js",
-    "bing-source.js",
-    "depth-service.js",
-    "boot-theme.js",
-    "wallpaper-filter.js",
-    "client.js",
+    "src/server",
+    "src/shared",
+    "dist/client.js",
     "cordis.patch.yml",
     "locale/*.json",
     "README.md",
     "README.zh-CN.md",
-    "icon.svg",
+    "assets/icon.svg",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md",
     "third-party"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepack": "npm run build",
     "test": "node --test test/*.test.js",
-    "check": "node --check index.js && node --check bing-source.js && node --check depth-service.js && node --check palette.js && node --check image-palette.js && node --check custom-palette.js && node --check client-main.js && node --check appearance.js && node --check boot-theme.js && node --check compatibility.js && node --check wallpaper-filter.js && node --check weather.js && node --check weather-effects.js && node --check weather-backdrop.js && node --check precipitation.js && node --check glass-impact.js && node --check three-precipitation.js && node --check weather-atmosphere.js && node --check weather-lightning.js && node --check window-light.js && node --check wallpaper-visibility.js && node --check sidebar-background.js && node --check wallpaper-alignment.js && node --check wallpaper-parallax.js && node --check palette-preview.js && node --check client.js"
+    "check": "node scripts/check.mjs"
   },
   "dsh": {
     "bundle": {

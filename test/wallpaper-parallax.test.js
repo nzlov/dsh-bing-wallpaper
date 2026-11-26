@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { transform } from 'esbuild';
-import * as core from '../palette.js';
-import { createPlugin } from '../client-main.js';
-import { createAppearanceController } from '../appearance.js';
-import { PREFERENCES_KEY } from '../boot-theme.js';
-import { encodeDepthPayload } from '../depth-service.js';
+import * as core from '../src/client/theme/palette.js';
+import { createPlugin } from '../src/client/client-main.js';
+import { createAppearanceController } from '../src/client/theme/appearance.js';
+import { PREFERENCES_KEY } from '../src/shared/boot-theme.js';
+import { encodeDepthPayload } from '../src/server/depth-service.js';
 import {
   DEFAULT_PARALLAX_STRENGTH,
   clearDepthMemoryCache,
@@ -16,7 +16,7 @@ import {
   normalizeParallax,
   parallaxMotion,
   smoothDepthMap,
-} from '../wallpaper-parallax.js';
+} from '../src/client/wallpaper/wallpaper-parallax.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const IMAGE_URL = '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg';
@@ -314,7 +314,7 @@ test('mountParallaxWallpaper uses WebGL2 mipmaps when downscaling and Catmull-Ro
   assert.equal(h.texParams.get('0:20'), 12, 'switches TEXTURE_MIN_FILTER back to LINEAR so sampleBicubic always reads mip 0');
   c.dispose();
 
-  const bundle = await read('client.js');
+  const bundle = await read('dist/client.js');
   assert.ok(bundle.includes('sampleBicubic'), 'built client.js ships Catmull-Rom bicubic shader');
   assert.ok(!bundle.includes('const int STEPS = 8'), 'built client.js does not ship legacy stepped raymarcher');
 });

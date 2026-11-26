@@ -1,5 +1,8 @@
 # Dependencies and generated browser bundle
 /node_modules/
+/dist/
+
+# Browser bundle generated at the root by older versions
 /client.js
 
 # Packages, test output, and temporary files

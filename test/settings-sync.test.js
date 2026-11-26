@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import * as core from '../palette.js';
-import { createPlugin } from '../client-main.js';
-import { createAppearanceController } from '../appearance.js';
-import { PREFERENCES_KEY } from '../boot-theme.js';
+import * as core from '../src/client/theme/palette.js';
+import { createPlugin } from '../src/client/client-main.js';
+import { createAppearanceController } from '../src/client/theme/appearance.js';
+import { PREFERENCES_KEY } from '../src/shared/boot-theme.js';
 
 test('rapid main and sidebar slider changes converge across pages without storage echoes or stale-value jumps', async t => {
   const original = new Map(['localStorage', 'document', 'window'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -130,7 +130,7 @@ test('rapid main and sidebar slider changes converge across pages without storag
 });
 
 test('range tracks and numeric outputs reserve stable widths across digit boundaries', async () => {
-  const source = await readFile(new URL('../client-main.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/client/client-main.js', import.meta.url), 'utf8');
   assert.match(source, /\.bdt-filter-range\{width:12rem;max-width:100%;min-width:0;min-height:44px\}/);
   assert.match(source, /\.bdt-control output\{flex:0 0 5ch;min-width:5ch;white-space:nowrap;text-align:end;font-variant-numeric:tabular-nums\}/);
   assert.match(source, /h\('div', \{ key: label, className: 'bdt-row' \}/);

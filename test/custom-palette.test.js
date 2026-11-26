@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { redFromArgb, greenFromArgb, blueFromArgb } from '@material/material-color-utilities';
-import { makeCustomSchemes } from '../custom-palette.js';
+import { makeCustomSchemes } from '../src/client/theme/custom-palette.js';
 
 const MODES = ['vibrant', 'faithful', 'soft', 'dysfunctional', 'muted'];
 const ROLES = [

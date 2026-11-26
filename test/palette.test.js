@@ -7,8 +7,8 @@ import {
 import {
   PALETTE_MODES, TEXT_COLOR_MODES, DEFAULTS, normalizeSettings, scheduledScheme,
   makeTokens, contrast, rgbToHsl, hslToRgb, localDate,
-} from '../palette.js';
-import { makeCustomSchemes } from '../custom-palette.js';
+} from '../src/client/theme/palette.js';
+import { makeCustomSchemes } from '../src/client/theme/custom-palette.js';
 
 const MODES = ['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome', 'vibrant', 'faithful', 'soft', 'dysfunctional', 'muted'];
 const SCHEMES = ['light', 'dark'];
