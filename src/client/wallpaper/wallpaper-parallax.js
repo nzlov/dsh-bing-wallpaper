@@ -236,6 +236,67 @@ async function fetchDepthMap(depthUrl, signal, fetchImpl) {
   return smoothed;
 }
 
+function observeFramePointers(document, window, onMove, onLeave) {
+  const frames = new Map();
+  const pointerOptions = { passive: true, capture: true };
+
+  function syncFrame(frame) {
+    const child = frame.contentDocument;
+    const previous = frames.get(frame);
+    if (previous?.document === child) return;
+    previous?.dispose();
+    frames.delete(frame);
+    if (!child) return;
+
+    const move = event => {
+      const { left, top, width, height } = frame.getBoundingClientRect();
+      const { clientLeft, clientTop, offsetWidth, offsetHeight } = frame;
+      if (!width || !height || !offsetWidth || !offsetHeight) return;
+      onMove({
+        clientX: left + (clientLeft + event.clientX) * width / offsetWidth,
+        clientY: top + (clientTop + event.clientY) * height / offsetHeight,
+      });
+    };
+    const leave = event => {
+      if (event.target === child.documentElement) onLeave();
+    };
+    child.addEventListener('pointermove', move, pointerOptions);
+    child.addEventListener('pointerleave', leave, pointerOptions);
+    const stopNested = observeFramePointers(child, window, move, onLeave);
+    frames.set(frame, { document: child, dispose() {
+      child.removeEventListener('pointermove', move, pointerOptions);
+      child.removeEventListener('pointerleave', leave, pointerOptions);
+      stopNested();
+    } });
+  }
+
+  function syncFrames() {
+    const present = new Set(document.querySelectorAll('iframe'));
+    for (const [frame, tracked] of frames) {
+      if (present.has(frame)) continue;
+      tracked.dispose();
+      frames.delete(frame);
+    }
+    for (const frame of present) syncFrame(frame);
+  }
+
+  // A navigation can replace the child document without changing the frame element.
+  const onLoad = event => { if (event.target.localName === 'iframe') syncFrame(event.target); };
+  document.addEventListener('load', onLoad, true);
+  const containsFrame = node => node.nodeType === 1 && (node.localName === 'iframe' || node.querySelector('iframe'));
+  const observer = typeof window.MutationObserver === 'function' ? new window.MutationObserver(records => {
+    if (records.some(({ addedNodes, removedNodes }) => [...addedNodes, ...removedNodes].some(containsFrame))) syncFrames();
+  }) : null;
+  if (observer) observer.observe(document, { childList: true, subtree: true });
+  syncFrames();
+  return () => {
+    observer?.disconnect();
+    document.removeEventListener('load', onLoad, true);
+    for (const tracked of frames.values()) tracked.dispose();
+    frames.clear();
+  };
+}
+
 export function mountParallaxWallpaper({
   document,
   window,
@@ -255,6 +316,7 @@ export function mountParallaxWallpaper({
   let mainCanvas = null, gl = null, program = null, buffer = null, imageTex = null, depthTex = null;
   let locations = null, renderWidth = 0, renderHeight = 0, renderBleed = 0;
   let textureWidth = imageWidth || 1920, textureHeight = imageHeight || 1080, hasMipmaps = false, currentMinFilter = null;
+  let stopFramePointers;
   const abortController = new AbortController();
 
   const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -560,6 +622,7 @@ export function mountParallaxWallpaper({
     if (reducedMotion) mainCanvas.style.display = 'none';
     (document.body || root).prepend(mainCanvas);
     ready = true;
+    stopFramePointers = observeFramePointers(document, window, onPointerMove, onPointerLeave);
     if (!reducedMotion) draw();
   }
 
@@ -583,6 +646,7 @@ export function mountParallaxWallpaper({
       ready = false;
       abortController.abort();
       resetMotion();
+      stopFramePointers?.();
       window.removeEventListener('pointermove', onPointerMove, { capture: true });
       root.removeEventListener('pointerleave', onPointerLeave);
       window.removeEventListener('blur', onPointerLeave);

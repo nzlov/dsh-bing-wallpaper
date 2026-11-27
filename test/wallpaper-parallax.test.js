@@ -166,7 +166,7 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
   };
 
   const createdCanvases = [];
-  const document = {
+  const document = Object.assign(new EventTarget(), {
     documentElement: root,
     createElement(tag) {
       assert.equal(tag, 'canvas');
@@ -185,7 +185,7 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
       if (sel === '[data-bdt-sidebar-canvas]') return [leftPhoto, rightPhoto].flatMap(p => p.children.filter(c => Object.hasOwn(c.attributes, 'data-bdt-sidebar-canvas')));
       return [];
     },
-  };
+  });
 
   const mediaListeners = new Set();
   const media = {
@@ -294,6 +294,71 @@ test('mountParallaxWallpaper fetches backend depth map once per session, renders
   assert.equal(h.getDepthFetches(), 1, 'remount reuses cached depth map');
   assert.equal(h.attrs.has('data-bdt-parallax-active'), true);
   remount.dispose();
+});
+
+test('iframe pointer movement drives the shared wallpaper across insertion, navigation and removal', async () => {
+  clearDepthMemoryCache();
+  const h = createParallaxHarness();
+  function frameDocument() {
+    return Object.assign(new EventTarget(), {
+      iframes: [],
+      documentElement: new EventTarget(),
+      querySelectorAll(selector) { assert.equal(selector, 'iframe'); return this.iframes; },
+      pointermove(clientX, clientY) {
+        this.dispatchEvent(Object.assign(new Event('pointermove'), { clientX, clientY }));
+      },
+    });
+  }
+  const top = frameDocument();
+  Object.assign(top, h.document, {
+    querySelectorAll: selector => selector === 'iframe' ? top.iframes : h.document.querySelectorAll(selector),
+  });
+  const observers = new Map();
+  h.window.MutationObserver = class {
+    constructor(callback) { this.callback = callback; }
+    observe(node) { this.node = node; observers.set(node, this.callback); }
+    disconnect() { observers.delete(this.node); }
+  };
+  function iframe(contentDocument, left, top, scale = 1) {
+    return {
+      localName: 'iframe', nodeType: 1, contentDocument,
+      clientLeft: 2, clientTop: 2, offsetWidth: 200, offsetHeight: 200,
+      getBoundingClientRect: () => ({ left, top, width: 200 * scale, height: 200 * scale }),
+    };
+  }
+  const child = frameDocument(), nested = frameDocument(), foreign = iframe(null, 0, 0);
+  child.iframes.push(iframe(nested, 20, 20));
+  const tile = iframe(child, 800, 500, 2);
+  top.iframes.push(foreign);
+  const controller = mountParallaxWallpaper({
+    document: top, window: h.window, url: 'blob:test', depthUrl: DEPTH_URL,
+    imageWidth: 1920, imageHeight: 1080, settings: core.DEFAULTS, fetchImpl: h.fetchImpl,
+  });
+  await new Promise(setImmediate);
+
+  top.iframes.push(tile);
+  observers.get(top)([{ addedNodes: [tile], removedNodes: [] }]);
+  nested.pointermove(96, 76);
+  assert.ok(h.flushFrames() > 0);
+  assert.deepEqual(h.uniforms.get('u_offset'), [(1040 / 1280 - 0.5) * 2, (700 / 900 - 0.5) * 2]);
+
+  const reloaded = frameDocument();
+  tile.contentDocument = reloaded;
+  const load = new Event('load');
+  Object.defineProperty(load, 'target', { value: tile });
+  top.dispatchEvent(load);
+  nested.pointermove(0, 0);
+  assert.equal(h.flushFrames(), 0);
+  reloaded.pointermove(98, 98);
+  assert.ok(h.flushFrames() > 0);
+  assert.deepEqual(h.uniforms.get('u_offset'), [(1000 / 1280 - 0.5) * 2, (700 / 900 - 0.5) * 2]);
+
+  top.iframes.pop();
+  observers.get(top)([{ addedNodes: [], removedNodes: [tile] }]);
+  reloaded.pointermove(0, 0);
+  assert.equal(h.flushFrames(), 0);
+  controller.dispose();
+  assert.equal(observers.size, 0);
 });
 
 test('mountParallaxWallpaper uses WebGL2 mipmaps when downscaling and Catmull-Rom bicubic when magnifying', async () => {
