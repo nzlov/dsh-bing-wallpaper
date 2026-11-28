@@ -1,6 +1,6 @@
 {
   "name": "@nzlov/dsh-bing-wallpaper",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "type": "module",
   "description": "Daily Bing wallpaper, image-derived theme colours and automatic day/night appearance for DSH Web.",
   "author": "nzlov",
