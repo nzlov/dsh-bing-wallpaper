@@ -87,7 +87,7 @@ test('settings have labelled groups and keep scheduled times together', async t 
   const groups = {
     wallpaper: ['enabled', 'market', 'resolution'],
     appearance: ['mode', 'day', 'night'],
-    background: ['strength', 'filterMode', 'parallax'],
+    background: ['strength', 'filterMode', 'parallaxMode', 'parallax'],
     sidebars: ['leftSidebar.background', 'rightSidebar.background'],
     weather: ['weatherChoice'],
     colours: ['dynamic', ...PALETTE_MODES.map(mode => `test-${mode}`)],
@@ -345,12 +345,15 @@ test('prebuilt artifact ships ten modes without removed help copy', async () => 
   assert.doesNotMatch(client, /palette\.original|paletteHint\.|bdt-(?:palette|strength)-help|highVisibility|visibilityHint|原始配色|每小时、跨日、页面唤醒/);
   assert.ok(!client.includes("from '@material/"));
   assert.ok(!client.includes("from '@huggingface/"));
-  assert.deepEqual(Object.keys(manifest.dependencies || {}), []);
+  assert.deepEqual(Object.keys(manifest.dependencies || {}), ['@material/material-color-utilities', 'jpeg-js']);
   assert.deepEqual(Object.keys(manifest.optionalDependencies || {}), []);
   assert.deepEqual(Object.keys(manifest.peerDependencies || {}), []);
   assert.ok(manifest.files.includes('src/server'));
   assert.ok(manifest.files.includes('third-party'));
-  for (const path of ['third-party/NOTICES.md','third-party/material-color-utilities-LICENSE.txt', 'third-party/noctalia-LICENSE.txt']) assert.ok((await stat(new URL(`../${path}`, import.meta.url))).isFile());
+  assert.ok(manifest.files.includes('dist/sharp-renderer.js'));
+  assert.ok(client.includes('/bing-daily-theme/assets/sharp-renderer.js'));
+  assert.match(await read('dist/sharp-renderer.js'), /as createSharpParallaxRenderer/);
+  for (const path of ['third-party/NOTICES.md','third-party/material-color-utilities-LICENSE.txt', 'third-party/noctalia-LICENSE.txt', 'third-party/spark-LICENSE.txt']) assert.ok((await stat(new URL(`../${path}`, import.meta.url))).isFile());
   assert.match(await read('third-party/material-color-utilities-LICENSE.txt'), /Apache License/);
   assert.match(await read('third-party/noctalia-LICENSE.txt'), /Copyright \(c\) 2026 noctalia-dev/);
 });

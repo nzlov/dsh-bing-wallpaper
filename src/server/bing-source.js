@@ -5,6 +5,7 @@ export const RESOLUTIONS = Object.freeze(['1080p', '2k', '4k'])
 export const DAILY_PATH = '/bing-daily-theme/api/daily'
 export const IMAGE_PATH = '/bing-daily-theme/api/image'
 export const DEPTH_PATH = '/bing-daily-theme/api/depth'
+export const SCENE_PATH = '/bing-daily-theme/api/scene'
 const BING_ORIGINS = new Map([
   ['zh-CN', 'https://cn.bing.com'],
   ['en-US', 'https://www.bing.com'],
@@ -124,7 +125,6 @@ async function readLimited(response, limit) {
   }
 }
 
-// Options are test seams, not plugin configuration. Production always uses defaults.
 export function createBingSource({
   fetchImpl = globalThis.fetch,
   now = Date.now,
@@ -133,8 +133,10 @@ export function createBingSource({
   imageMaxBytes = 16 * 1024 * 1024,
   refreshMs = 60 * 60 * 1000,
   retryMs = 60 * 1000,
+  analyzeImage,
 } = {}) {
   let disposed = false
+  const lifetime = new AbortController()
   // No shared fallback or cache admission across markets or resolutions.
   const states = new Map()
   for (const market of BING_ORIGINS.keys()) {
@@ -193,14 +195,16 @@ export function createBingSource({
       if (!image) {
         // Archive URLs only admit an ID; construct only fixed Bing resolution URLs.
         const url = upstreamImageUrl(origin, record.id, resolution)
-        image = { bytes: await download(url, 'image'), contentType: 'image/jpeg' }
+        const bytes = await download(url, 'image')
+        const analysis = await analyzeImage?.(bytes, lifetime.signal).catch(() => undefined)
+        image = { bytes, contentType: 'image/jpeg', analysis }
       }
       if (disposed) throw new BingSourceError('Bing source disposed')
       // Atomic publication: a failed new download never replaces the old picture.
       state.images.delete(record.id)
       state.images.set(record.id, image)
       while (state.images.size > 2) state.images.delete(state.images.keys().next().value)
-      state.snapshot = record.metadata
+      state.snapshot = { ...record.metadata, ...image.analysis }
       state.stale = false
       state.nextCheck = now() + refreshMs
     } catch (error) {
@@ -231,6 +235,7 @@ export function createBingSource({
     },
     dispose() {
       disposed = true
+      lifetime.abort(new BingSourceError('Bing source disposed'))
       for (const controller of controllers) controller.abort(new BingSourceError('Bing source disposed'))
       controllers.clear()
       for (const state of states.values()) {

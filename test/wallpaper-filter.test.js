@@ -99,7 +99,8 @@ test('both locales name each filter and adjustment; settings preview keeps the o
   assert.match(source, /if \(backgroundOnly\) \{[^}]+publish\(\{ settings \}\);\s+if \(weatherChanged\) void weather.sync\(settings\);\s+return;/);
   assert.match(source, /className: 'bdt-preview-image', src: s\.url/);
   assert.doesNotMatch(source, /bdt-preview-tint|filter: look\?\.filter/);
-  assert.match(source, /extractImagePalettes\(context\.getImageData/);
+  assert.match(source, /accent: meta\.imagePalette \|\| fallbackAccent/);
+  assert.doesNotMatch(source, /extractImagePalettes|getImageData/);
   const manifest = JSON.parse(await read('package.json'));
   assert.ok(manifest.files.includes('src/shared'));
   const client = (await read('dist/client.js')).replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));

@@ -9,16 +9,32 @@ import { weatherBackdrop } from './weather/weather-backdrop.js';
 import { createWeatherEngine } from './weather/precipitation.js';
 import { FACING_BEARINGS } from './weather/window-light.js';
 import { alignWallpaper } from './wallpaper/wallpaper-alignment.js';
-import { mountParallaxWallpaper, depthUrlFor } from './wallpaper/wallpaper-parallax.js';
+import { decodeWallpaperImage, isParallaxModeAvailable, mountParallaxWallpaper, parallaxDataUrl, PARALLAX_MODES } from './wallpaper/wallpaper-parallax.js';
+import { createDepthParallaxRenderer } from './wallpaper/parallax-depth-renderer.js';
 import { renderPaletteMiniature, PALETTE_PREVIEW_CSS } from './theme/palette-preview.js';
 
 const weatherChoices = ['off', 'location', ...WEATHER_EFFECTS];
+const fallbackAccent = [92, 116, 132];
+const SHARP_RENDERER_URL = '/bing-daily-theme/assets/sharp-renderer.js';
+const SHARP_DOCS_URL = 'https://github.com/nzlov/dsh-bing-wallpaper/blob/main/docs/sharp-install';
+
+async function loadSharpParallaxRenderer(options) {
+  const { createSharpParallaxRenderer } = await import(SHARP_RENDERER_URL);
+  options.signal.throwIfAborted();
+  return createSharpParallaxRenderer(options);
+}
 
 function activeWeatherEffect({ settings, observation }) {
   if (!settings.enabled) return null;
   const { mode, effect } = settings.weather;
   if (mode === 'fixed') return effect;
   return mode === 'location' ? observation?.effect ?? null : null;
+}
+
+function canPrefetchParallax(mode) {
+  const hasWebGL = window.WebGL2RenderingContext || (mode === 'depth' && window.WebGLRenderingContext);
+  return hasWebGL && !document.hidden && !window.frameElement?.matches('iframe[data-dsh-tile-layout]')
+    && !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 }
 
 export function createPlugin(React, core, dictionaries, createAppearanceController) {
@@ -33,17 +49,34 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       let settings;
       try { settings = core.normalizeSettings(JSON.parse(localStorage.getItem(KEY) || '{}')); }
       catch { settings = core.normalizeSettings(); }
-      let state = { settings, busy: false, issue: '', meta: null, url: '', accent: [92, 116, 132], scheme: ctx.theme.getTheme().active.colorScheme, storageIssue: false };
+      let state = { settings, busy: false, issue: '', meta: null, url: '', accent: fallbackAccent, scheme: ctx.theme.getTheme().active.colorScheme, storageIssue: false };
       const listeners = new Set();
       const publish = patch => { state = { ...state, ...patch }; listeners.forEach(fn => fn()); };
       const weather = createWeatherController(publish);
       const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn); };
       const useState = () => React.useSyncExternalStore(subscribe, () => state);
-      let alive = true, tokenDisposer, controller, activeUrl = '';
+      let alive = true, tokenDisposer, controller, parallaxPrefetch;
       const appearance = createAppearanceController(ctx.theme, () => {
         settings = { ...settings, mode: 'follow' }; save(); publish({ settings });
       }, core.scheduledScheme);
       let lastCheck = 0, lastDay = '', generation = 0, updateWindowLight;
+      function discardParallaxPrefetch() {
+        parallaxPrefetch?.controller.abort();
+        parallaxPrefetch = undefined;
+      }
+      function prefetchParallax(meta, url) {
+        discardParallaxPrefetch();
+        const { parallaxMode, parallaxStrength } = settings;
+        if (!parallaxStrength || !isParallaxModeAvailable(meta, parallaxMode) || !canPrefetchParallax(parallaxMode)) return;
+        const dataUrl = parallaxDataUrl(url, parallaxMode);
+        if (!dataUrl) return;
+        const controller = new AbortController();
+        const pending = Promise.resolve().then(() => fetch(dataUrl, {
+          signal: controller.signal, credentials: 'same-origin', priority: 'low',
+        })).catch(() => null);
+        parallaxPrefetch = { dataUrl, controller, pending };
+        return parallaxPrefetch;
+      }
       function save() {
         let storageIssue = false;
         try { localStorage.setItem(KEY, JSON.stringify(settings)); }
@@ -69,9 +102,10 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       }
       function update(patch, persist = true) {
         const next = core.normalizeSettings({ ...settings, ...patch });
-        const backgroundOnly = Object.keys(next).every(key => ['filterMode', 'filterAmounts', 'parallaxStrength', 'leftSidebar', 'rightSidebar', 'weather'].includes(key) || next[key] === settings[key]);
+        const backgroundOnly = Object.keys(next).every(key => ['filterMode', 'filterAmounts', 'parallaxMode', 'parallaxStrength', 'leftSidebar', 'rightSidebar', 'weather'].includes(key) || next[key] === settings[key]);
         if (!backgroundOnly && next.day === next.night) { publish({ issue: 'sameTime' }); return; }
         if (JSON.stringify(next) === JSON.stringify(settings)) return;
+        if (!next.parallaxStrength || next.parallaxMode !== settings.parallaxMode) discardParallaxPrefetch();
         const weatherChanged = next.enabled !== settings.enabled || JSON.stringify(next.weather) !== JSON.stringify(settings.weather);
         // Local background controls can update without reloading the photo or theme.
         if (backgroundOnly) {
@@ -83,37 +117,15 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         if (sourceChanged) {
           // Invalidate even a request still decoding: a slow old source must not
           // overwrite a newer choice. Keep its displayed photo until success.
-          generation++; controller?.abort(); lastCheck = 0; lastDay = ''; publish({ busy: false });
+          generation++; controller?.abort(); lastCheck = 0; lastDay = '';
+          discardParallaxPrefetch();
+          publish({ busy: false });
         }
         if (next.mode !== settings.mode || !next.enabled) restoreTheme();
         settings = next; if (persist) save(); publish({ settings, issue: '' }); syncTokens(); syncMode();
         if (weatherChanged) void weather.sync(settings);
-        if (!settings.enabled) { generation++; controller?.abort(); publish({ busy: false }); }
+        if (!settings.enabled) { generation++; controller?.abort(); discardParallaxPrefetch(); publish({ busy: false }); }
         else if (!wasEnabled || sourceChanged) void refresh();
-      }
-      async function decode(blob, signal) {
-        const url = URL.createObjectURL(blob), image = new Image();
-        let onAbort;
-        try {
-          signal.throwIfAborted();
-          image.src = url;
-          await Promise.race([image.decode(), new Promise((_, reject) => {
-            onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
-            signal.addEventListener('abort', onAbort, { once: true });
-          })]);
-          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-          const naturalWidth = image.naturalWidth || 112, naturalHeight = image.naturalHeight || 112;
-          const scale = Math.min(1, 3840 / Math.max(naturalWidth, naturalHeight));
-          const width = Math.max(1, Math.round(naturalWidth * scale));
-          const height = Math.max(1, Math.round(naturalHeight * scale));
-          const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-          const context = canvas.getContext('2d', { willReadFrequently: true });
-          if (!context) throw new Error('Canvas unavailable');
-          context.drawImage(image, 0, 0, width, height);
-          const accent = core.extractImagePalettes(context.getImageData(0, 0, width, height).data, width, height);
-          return { url, accent, photo: image, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight };
-        } catch (error) { URL.revokeObjectURL(url); throw error; }
-        finally { if (onAbort) signal.removeEventListener('abort', onAbort); }
       }
       async function refresh() {
         if (!alive || !settings.enabled || state.busy) return;
@@ -121,7 +133,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         const requestController = new AbortController(); controller = requestController;
         const signal = requestController.signal, timeout = setTimeout(() => requestController.abort(), 30000);
         publish({ busy: true, issue: '' }); lastCheck = Date.now();
-        let decoded;
+        let preparedParallax;
         try {
           const response = await fetch(`/bing-daily-theme/api/daily?market=${market}${resolution === '1080p' ? '' : `&resolution=${resolution}`}`, { signal, credentials: 'same-origin', cache: 'no-store' });
           if (!response.ok) throw new Error(`Metadata HTTP ${response.status}`);
@@ -130,21 +142,22 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           const resPrefix = resolution === '1080p' ? '' : `resolution=${resolution}&`;
           const expectedImage = new RegExp(`^\\/bing-daily-theme\\/api\\/image\\?${marketPrefix}${resPrefix}id=OHR\\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\\.jpg$`);
           if (meta.market !== market || (meta.resolution || '1080p') !== resolution || typeof meta.imageUrl !== 'string' || meta.imageUrl.length > 300 || !expectedImage.test(meta.imageUrl)) throw new Error('Invalid wallpaper source or URL');
-          if (!state.meta || meta.imageUrl !== state.meta.imageUrl || !state.url) {
-            const image = await fetch(meta.imageUrl, { signal, credentials: 'same-origin' });
-            if (!image.ok) throw new Error(`Image HTTP ${image.status}`);
-            const blob = await image.blob();
-            if (blob.size > 20 * 1024 * 1024 || !blob.type.startsWith('image/')) throw new Error('Invalid wallpaper image');
-            decoded = await decode(blob, signal);
-          }
-          if (!alive || current !== generation) { if (decoded) URL.revokeObjectURL(decoded.url); return; }
-          const oldUrl = activeUrl;
-          if (decoded) activeUrl = decoded.url;
-          publish({ meta, ...(decoded || {}), issue: meta.stale ? 'stale' : '' });
+          if (!alive || current !== generation) return;
+          const url = meta.imageUrl;
+          const photoPending = url === state.url ? state.photo : decodeWallpaperImage(url, signal);
+          if (url !== state.url) preparedParallax = prefetchParallax(meta, url);
+          const photo = await photoPending;
+          if (!alive || current !== generation) return;
+          publish({
+            meta, url, photo, issue: meta.stale ? 'stale' : '',
+            accent: meta.imagePalette || fallbackAccent,
+            imageWidth: meta.imageWidth || photo.naturalWidth,
+            imageHeight: meta.imageHeight || photo.naturalHeight,
+          });
           syncTokens();
-          if (oldUrl && oldUrl !== activeUrl) URL.revokeObjectURL(oldUrl);
           lastDay = core.localDate();
         } catch (error) {
+          if (preparedParallax && parallaxPrefetch === preparedParallax) discardParallaxPrefetch();
           if (alive && current === generation) publish({ issue: state.url ? (state.meta?.market !== market || (state.meta?.resolution || '1080p') !== resolution) ? 'sourceFailed' : 'fetchFailed' : 'firstFetchFailed' });
         } finally {
           clearTimeout(timeout);
@@ -161,7 +174,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         appearance.changed(snapshot);
       });
       function useLocale() {
-        React.useSyncExternalStore(fn => ctx.locale.subscribe(fn), () => ctx.locale.getSnapshot());
+        return React.useSyncExternalStore(fn => ctx.locale.subscribe(fn), () => ctx.locale.getSnapshot());
       }
       const css = `
 .bdt-page{max-width:720px;padding:24px;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}
@@ -202,8 +215,9 @@ ${PALETTE_PREVIEW_CSS}
         // DSH's transparent session tiles share the outer window's wallpaper and weather.
         const tiled = Boolean(window.frameElement?.matches('iframe[data-dsh-tile-layout]'));
         const condition = s.url && !tiled ? activeWeatherEffect(s) : null;
-        const parallaxAvailable = Boolean(s.meta?.parallaxAvailable);
-        const parallaxActive = Boolean(s.settings.enabled && parallaxAvailable && s.settings.parallaxStrength > 0 && s.url && !tiled);
+        const { parallaxMode } = s.settings;
+        const parallaxUrl = s.settings.enabled && !tiled && isParallaxModeAvailable(s.meta, parallaxMode)
+          ? parallaxDataUrl(s.url, parallaxMode) : '';
         const { mode, facing } = s.settings.weather;
         const dayStart = s.settings.mode === 'schedule' ? s.settings.day : null;
         const nightStart = s.settings.mode === 'schedule' ? s.settings.night : null;
@@ -217,19 +231,31 @@ ${PALETTE_PREVIEW_CSS}
         const engine = React.useRef(null);
         const refreshCrop = React.useRef(null);
         const parallaxRef = React.useRef(null);
-        React.useEffect(() => {
-          const depthUrl = depthUrlFor(s.meta?.imageUrl);
-          if (!parallaxActive || !depthUrl) return;
-          const parallaxController = mountParallaxWallpaper({
-            document, window, url: s.url, photo: s.photo, depthUrl,
+        React.useLayoutEffect(() => {
+          if (!parallaxUrl) return;
+          const createRenderer = parallaxMode === 'sharp' ? loadSharpParallaxRenderer : createDepthParallaxRenderer;
+          let activePrefetch;
+          const controller = mountParallaxWallpaper({
+            document, window, url: s.url, photo: s.photo, dataUrl: parallaxUrl, createRenderer,
             imageWidth: s.imageWidth, imageHeight: s.imageHeight, settings: s.settings,
+            async fetchImpl(url, options) {
+              if (parallaxPrefetch?.dataUrl !== url) return fetch(url, options);
+              const { controller, pending } = parallaxPrefetch;
+              parallaxPrefetch = undefined;
+              activePrefetch = controller;
+              const response = await pending;
+              options.signal.throwIfAborted();
+              if (!response) throw new Error('Parallax data unavailable');
+              return response;
+            },
           });
-          parallaxRef.current = parallaxController;
+          parallaxRef.current = controller;
           return () => {
-            if (parallaxRef.current === parallaxController) parallaxRef.current = null;
-            parallaxController.dispose();
+            parallaxRef.current = null;
+            activePrefetch?.abort();
+            controller.dispose();
           };
-        }, [parallaxActive, s.url, s.photo, s.meta?.imageUrl]);
+        }, [parallaxUrl, s.url, s.photo, parallaxMode]);
         React.useLayoutEffect(() => {
           parallaxRef.current?.update({ imageWidth: s.imageWidth, imageHeight: s.imageHeight, settings: s.settings });
         }, [s.imageWidth, s.imageHeight, s.settings]);
@@ -294,10 +320,10 @@ ${PALETTE_PREVIEW_CSS}
         const mainBase = visibilityMatte.replace(/^rgba\((\d+, \d+, \d+), [^)]+\)$/, 'rgb($1)');
         const { base, matte } = sidebarColors(colors, s.scheme);
         const sidebars = sidebarBackgroundCSS({ settings: s.settings, image, overlays: [], matte, base });
-        const parallaxCSS = parallaxActive
-          ? 'html[data-bdt-parallax-active]::before{display:none}html[data-bdt-parallax-active] [data-bdt-sidebar-image]{background-image:none!important}[data-bdt-sidebar-image]>[data-bdt-sidebar-canvas]{display:block;width:100%;height:100%;pointer-events:none}'
-          : '';
-        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${parallaxCSS}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${s.settings.dynamic && s.settings.systemTweaks ? SYSTEM_TWEAKS_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
+        const parallaxCanvas = parallaxUrl ? '[data-bdt-sidebar-image]>[data-bdt-sidebar-canvas]{display:block;width:100%;height:100%;pointer-events:none}' : '';
+        const opaqueParallax = parallaxUrl && parallaxMode === 'depth'
+          ? 'html[data-bdt-parallax-active]::before{display:none}html[data-bdt-parallax-active] [data-bdt-sidebar-image]{background-image:none!important}' : '';
+        return h('style', null, `html{background-color:${mainBase};background-image:none}body{background-color:transparent!important}${filter}${SHELL_WALLPAPER_CSS}${sidebars}${parallaxCanvas}${opaqueParallax}${active ? WEATHER_LAYOUT_CSS : ''}${s.settings.dynamic ? MARKETPLACE_THEME_CSS : ''}${s.settings.dynamic && s.settings.systemTweaks ? SYSTEM_TWEAKS_CSS : ''}${pluginPageCSS(s.settings.dynamic)}`);
       }
       function WeatherForm({ config, observation, status, row }) {
         const [draft, setDraft] = React.useState(config);
@@ -348,7 +374,8 @@ ${PALETTE_PREVIEW_CSS}
             h('button', { type: 'submit', disabled: locating }, t('weatherApply'))));
       }
       function Settings() {
-        useLocale(); const s = useState(), prefs = s.settings;
+        const locale = useLocale();
+        const s = useState(), prefs = s.settings;
         const { facing, ...weatherConfig } = prefs.weather;
         const weatherChoice = prefs.weather.mode === 'fixed' ? prefs.weather.effect : prefs.weather.mode;
         const selectWeather = choice => {
@@ -366,7 +393,8 @@ ${PALETTE_PREVIEW_CSS}
         const checkbox = key => h('input', { id: `bdt-${key}`, type: 'checkbox', checked: prefs[key], onChange: e => update({ [key]: e.target.checked }) });
         const filterOption = wallpaperFilters.options[prefs.filterMode], filterAmount = prefs.filterAmounts[prefs.filterMode];
         const filterLabel = `filterAmount.${prefs.filterMode}`, filterId = `bdt-${filterLabel}`;
-        const parallaxAvailable = Boolean(s.meta?.parallaxAvailable);
+        const parallaxAvailable = isParallaxModeAvailable(s.meta, prefs.parallaxMode);
+        const showParallaxHint = s.meta && !parallaxAvailable;
         const parallaxValue = parallaxAvailable ? prefs.parallaxStrength : 0;
         const parallaxText = parallaxValue > 0 ? `${parallaxValue}%` : t('parallaxOff');
         const sidebarControls = key => {
@@ -434,13 +462,17 @@ ${PALETTE_PREVIEW_CSS}
               onChange: e => update({ filterAmounts: { ...prefs.filterAmounts, [prefs.filterMode]: Number(e.target.value) } }),
             }), h('output', { htmlFor: filterId }, `${filterAmount}${filterOption.unit}`)),
             h('div', null,
+              row('parallaxMode', h('select', { id: 'bdt-parallaxMode', className: 'bdt-wallpaper-select', value: prefs.parallaxMode, disabled: !prefs.enabled,
+                'aria-describedby': showParallaxHint ? 'bdt-parallaxHint' : undefined,
+                onChange: e => update({ parallaxMode: e.target.value }),
+              }, ...PARALLAX_MODES.map(mode => h('option', { key: mode, value: mode }, t(`parallaxMode.${mode}`))))),
               row('parallax', h('input', { id: 'bdt-parallax', className: 'bdt-filter-range', type: 'range', min: 0, max: 100, step: 1,
                 value: parallaxValue, disabled: !prefs.enabled || !parallaxAvailable,
                 'aria-valuetext': parallaxText,
-                'aria-describedby': parallaxAvailable ? undefined : 'bdt-parallaxHint',
                 onChange: e => update({ parallaxStrength: Number(e.target.value) }),
               }), h('output', { htmlFor: 'bdt-parallax' }, parallaxText)),
-              !parallaxAvailable && h('p', { id: 'bdt-parallaxHint', className: 'bdt-muted bdt-field-hint' }, t('parallaxUnavailable')))),
+              showParallaxHint && h('p', { id: 'bdt-parallaxHint', className: 'bdt-muted bdt-field-hint' }, t(`parallaxUnavailable.${prefs.parallaxMode}`), ' ',
+                prefs.parallaxMode === 'sharp' && h('a', { href: `${SHARP_DOCS_URL}${locale?.active === 'zh' ? '.zh-CN' : ''}.md`, target: '_blank', rel: 'noopener noreferrer' }, t('parallaxSetup.sharp'))))),
           group('sidebars', ...['leftSidebar', 'rightSidebar'].map(sidebarControls)),
           group('weather',
             row('weatherChoice', h('select', { id: 'bdt-weatherChoice', className: 'bdt-wallpaper-select', value: weatherChoice, disabled: !prefs.enabled,
@@ -495,10 +527,10 @@ ${PALETTE_PREVIEW_CSS}
         document.addEventListener('visibilitychange', wake); window.addEventListener('online', online); window.addEventListener('storage', storage);
         syncMode(); void refresh(); void weather.sync(settings);
         return () => {
-          weather.dispose(); alive = false; generation++; clearInterval(timer); controller?.abort();
+          weather.dispose(); alive = false; generation++; clearInterval(timer); controller?.abort(); discardParallaxPrefetch();
           document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', online); window.removeEventListener('storage', storage);
           document.getElementById(BOOT_STYLE_ID)?.remove();
-          tokenDisposer?.(); restoreTheme(); if (activeUrl) URL.revokeObjectURL(activeUrl); listeners.clear();
+          tokenDisposer?.(); restoreTheme(); listeners.clear();
         };
       });
     },

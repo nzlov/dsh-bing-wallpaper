@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractImagePalettes } from '../src/client/theme/image-palette.js';
+import { extractImagePalettes } from '../src/server/image-palette.js';
 
 const PIXELS = 112 * 112;
 const M3 = ['content', 'tonal-spot', 'fruit-salad', 'rainbow', 'monochrome'];

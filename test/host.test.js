@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, isBingImageId } from '../src/server/bing-source.js'
+import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, SCENE_PATH, isBingImageId } from '../src/server/bing-source.js'
 import { encodeDepthPayload } from '../src/server/depth-service.js'
-import { apply, createResources, inject } from '../src/server/index.js'
+import { apply, createResources, inject, SHARP_ASSET_PATH } from '../src/server/index.js'
 
 const ID = 'OHR.LakeBled_ZH-CN1234567890_1920x1080.jpg'
 const OTHER_ID = 'OHR.Forest_ZH-CN9876543210_1920x1080.jpg'
@@ -377,7 +377,7 @@ test('one disconnected reader does not abort the refresh shared with another', a
   source.dispose()
 })
 
-test('apply uses one owned effect, unregisters both routes and aborts both markets on cleanup', async t => {
+test('apply uses one owned effect, unregisters all routes and aborts both markets on cleanup', async t => {
   assert.deepEqual(inject, ['webServer', 'connection'])
   const registered = new Map(), signals = []
   let cleanup, effects = 0
@@ -406,7 +406,7 @@ test('apply uses one owned effect, unregisters both routes and aborts both marke
   }
   apply(ctx)
   assert.equal(effects, 1)
-  assert.deepEqual([...registered.keys()], [DAILY_PATH, IMAGE_PATH, DEPTH_PATH])
+  assert.deepEqual([...registered.keys()], [DAILY_PATH, IMAGE_PATH, DEPTH_PATH, SCENE_PATH, SHARP_ASSET_PATH])
   const results = MARKETS.map(market => registered.get(DAILY_PATH).resource(
     request(`${DAILY_PATH}?market=${market}`, { headers: { host: '127.0.0.1:3001' } }),
   ))

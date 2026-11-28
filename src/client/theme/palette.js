@@ -9,7 +9,6 @@ import { normalizeSidebar } from '../wallpaper/sidebar-background.js';
 import { DEFAULT_STRENGTH, normalizeStrength, backgroundAlpha } from '../wallpaper/wallpaper-visibility.js';
 import { normalizeParallax } from '../wallpaper/wallpaper-parallax.js';
 
-export { extractImagePalettes } from './image-palette.js';
 export { normalizeStrength, backgroundAlpha } from '../wallpaper/wallpaper-visibility.js';
 
 // Pure image-colour and scheduling logic; shared by browser bundle and tests.
@@ -17,7 +16,7 @@ export const PALETTE_MODES = Object.freeze(['content', 'tonal-spot', 'fruit-sala
 export const TEXT_COLOR_MODES = Object.freeze(['theme', 'high-contrast']);
 export const RESOLUTIONS = Object.freeze(['1080p', '2k', '4k']);
 const { filterMode, filterAmounts } = wallpaperFilters.normalize();
-const { parallaxStrength } = normalizeParallax();
+const parallaxDefaults = normalizeParallax();
 const sidebarDefaults = () => {
   const sidebar = normalizeSidebar();
   return Object.freeze({ ...sidebar, filterAmounts: Object.freeze(sidebar.filterAmounts) });
@@ -26,7 +25,7 @@ export const DEFAULTS = Object.freeze({
   enabled: true, dynamic: true, market: 'zh-CN', resolution: '1080p', paletteMode: 'content', textColorMode: 'theme',
   pureBlackDark: false, systemTweaks: false, mode: 'schedule', day: '07:00', night: '19:00', strength: DEFAULT_STRENGTH,
   weather: Object.freeze(normalizeWeather()),
-  filterMode, filterAmounts: Object.freeze(filterAmounts), parallaxStrength, leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
+  filterMode, filterAmounts: Object.freeze(filterAmounts), ...parallaxDefaults, leftSidebar: sidebarDefaults(), rightSidebar: sidebarDefaults(),
 });
 export function normalizeSettings(input = {}) {
   if (!input || typeof input !== 'object') input = {};

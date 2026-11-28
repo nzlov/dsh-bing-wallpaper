@@ -16,7 +16,7 @@ Daily Bing wallpapers, image-derived theme colours, and automatic light/dark app
 - Clickable palette cards show light and dark previews separated by a diagonal line.
 - Linear wallpaper visibility from 10% to 100%, without a fixed reading overlay.
 - Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength. Filters update the background live; the settings preview and theme extraction use the original image.
-- Optional 3D depth parallax powered by WebGL (with Catmull-Rom bicubic upscaling, WebGL2 trilinear mipmaps, and smoothed depth warping), shared across the main wallpaper and wallpaper-backed sidebars via a single `0–100%` intensity slider (`0` = off). Stays zero-dependency by default; the slider activates once `@huggingface/transformers` is installed in the DSH profile and pauses under reduced motion.
+- Optional depth-map and SHARP 3D scene parallax. The server generates and caches model data, and the browser renders the same frame for the main wallpaper and wallpaper-backed sidebars. Both modes use the same `0–100%` intensity range, with `0` off. SHARP uses the selected wallpaper’s pixel density and preserves its framing at rest. The wallpaper respects reduced motion.
 - Main pages, sidebars and the startup screen use dedicated wallpaper filter layers over a solid-colour fallback. Page content, document images and charts are not filtered.
 - Independent left/right sidebar backgrounds: wallpaper or solid theme colour, wallpaper visibility and filters that follow the main background or can be customized, and an option to match the toolbar background. Sidebar settings start collapsed when visibility follows the main background. Wallpaper shares viewport coordinates with the centre through resizing, splits and drawer animations. Both solid mode and the optional theme-colour overlay use the sidebar colour shown in the palette cards; the overlay remains independent of wallpaper visibility. Desktop and mobile share the same settings.
 - Scheduled, system, follow-DSH, or fixed light/dark appearance. The default schedule is 07:00–19:00 in the browser’s local time zone.
@@ -42,15 +42,21 @@ Then install this directory in DSH using its absolute path.
 
 Open **Settings → Bing daily wallpaper**. Plugin source lives in `src/`. Rebuild to update `dist/client.js`. When updating an installed bundle, follow Plugin Manager’s restart instructions.
 
-### Optional 3D depth parallax
+### Optional parallax modes
 
-Depth parallax is optional so the plugin stays dependency-free by default. To enable it, install `@huggingface/transformers` in your DSH profile and restart DSH:
+Choose a mode in **Settings → Bing daily wallpaper → Parallax mode**. **Depth map (Depth Anything)** shifts pixels from the photo according to their depth. **3D scene (SHARP)** can reveal details the model predicts behind foreground objects as the viewpoint moves. The settings preview displays the original photo.
+
+For **Depth map**, install `@huggingface/transformers` in your DSH profile and restart DSH.
 
 ```sh
 dsh plugin --profile web add @huggingface/transformers
 ```
 
-Once installed, the **Depth parallax** slider (`0–100%`, `0` = off) becomes enabled in settings, and the quantized depth model is downloaded once on demand and cached locally under `~/.cache/dsh-bing-wallpaper`. Without this package, no model is downloaded and the slider stays disabled with a note.
+For **3D scene (SHARP)**, install the Python environment and checkpoint on the DSH server, then restart DSH. Follow the [SHARP manual installation guide](docs/sharp-install.md) for the commands and paths.
+
+The server downloads the Depth Anything model on demand. It keeps the original photos and extracted palettes in memory and caches depth maps and compressed SHARP scenes in the `depth` and `scenes` directories under `${XDG_CACHE_HOME:-$HOME/.cache}/dsh-bing-wallpaper`.
+
+The browser loads the depth map or SHARP scene for the current wallpaper and renders pointer movement in real time with WebGL. SHARP uses WebGL2 and loads its rendering code when selected. The original photo remains visible while model data is prepared, when reduced motion is enabled, or when rendering is unavailable.
 
 ## Weather effects
 
@@ -69,7 +75,7 @@ For a custom provider, enter an HTTPS endpoint that supports browser cross-origi
 ## Notes
 
 - No API key or CDN is required. Wallpaper requests go only to fixed Bing HTTPS endpoints; chat content and browser credentials are not forwarded to Bing.
-- Images are cached in memory, not saved as an offline wallpaper library. Update checks use an hourly server cache, so refreshing does not necessarily download a new image. The two regions may show the same photo.
+- The server caches original Bing images in memory and checks for new images hourly. Refreshing may reuse the previous image. The two regions may show the same photo.
 - Plugin controls are saved in the current browser. DSH’s appearance preference is shared across the profile; use scheduling in one primary browser to avoid competing schedules.
 
 ## License and credits

@@ -256,11 +256,8 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   const storage = new Map([[PREFERENCES_KEY, JSON.stringify(core.normalizeSettings({ mode: 'follow' }))]]);
   globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) };
   globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  const pixels = new Uint8ClampedArray(112 * 112 * 4);
-  for (let i = 0; i < pixels.length; i += 4) pixels.set([32, 96, 180, 255], i);
   globalThis.document = {
     getElementById() { return null; }, addEventListener() {}, removeEventListener() {},
-    createElement() { return { getContext() { return { drawImage() {}, getImageData() { return { data: pixels }; } }; } }; },
   };
   globalThis.Image = class { decode() { return Promise.resolve(); } };
   let fail = false, overrides = 0, themeWrites = 0, appliedTokens;
@@ -268,9 +265,8 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   const applied = new Promise(resolve => { loaded = resolve; });
   const fetch = t.mock.method(globalThis, 'fetch', async url => {
     if (fail) return new Response('', { status: 503 });
-    return url.includes('/api/daily')
-      ? Response.json({ market: 'zh-CN', imageUrl: '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg', date: '2026-11-20' })
-      : new Response(new Blob(['image'], { type: 'image/jpeg' }));
+    assert.ok(url.includes('/api/daily'));
+    return Response.json({ market: 'zh-CN', imageUrl: '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg', date: '2026-11-20' });
   });
   const React = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child != null && child !== false) }),
@@ -289,7 +285,7 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   const nodes = node => typeof node === 'object' ? [node, ...node.children.flatMap(nodes)] : [];
   const find = id => nodes(settings()).find(node => node.props.id === id);
   const change = (id, value, checked) => find(id).props.onChange({ target: { value, checked } });
-  assert.equal(fetch.mock.callCount(), 2);
+  assert.equal(fetch.mock.callCount(), 1);
   assert.equal(overrides, 1);
   assert.ok(wallpaper().children[0].includes('[data-dockkit-strip]'));
   const { base: solid, matte } = sidebarColors(appliedTokens, 'light');

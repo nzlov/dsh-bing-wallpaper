@@ -1,6 +1,9 @@
-import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, MARKET, RESOLUTION, isBingImageId, isBingMarket, isBingResolution } from './bing-source.js'
+import { readFile } from 'node:fs/promises'
+import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, SCENE_PATH, MARKET, RESOLUTION, isBingImageId, isBingMarket, isBingResolution } from './bing-source.js'
 import { bootThemeInjection } from '../shared/boot-theme.js'
 import { createDepthService } from './depth-service.js'
+import { createImageAnalyzer } from './image-analysis.js'
+import { createSharpSceneService } from './sharp-scene.js'
 
 // The carrier does not authenticate named routes. Connection is a real dependency.
 export const inject = ['webServer', 'connection']
@@ -19,6 +22,24 @@ function response(request, status, value, extraHeaders = {}) {
   })
 }
 
+function binaryResponse(request, bytes, type, maxAge, extraHeaders = {}) {
+  return new Response(request.method === 'HEAD' ? null : bytes, {
+    headers: {
+      'content-type': type,
+      'content-length': String(bytes.byteLength),
+      'cache-control': `private, max-age=${maxAge}`,
+      'x-content-type-options': 'nosniff',
+      'cross-origin-resource-policy': 'same-origin',
+      ...extraHeaders,
+    },
+  })
+}
+
+export const SHARP_ASSET_PATH = '/bing-daily-theme/assets/sharp-renderer.js'
+const RESOURCE_PATHS = { daily: DAILY_PATH, image: IMAGE_PATH, depth: DEPTH_PATH, scene: SCENE_PATH, sharpAsset: SHARP_ASSET_PATH }
+const SOURCE_QUERY = ['market', 'resolution']
+const IMAGE_QUERY = [...SOURCE_QUERY, 'id']
+
 function waitFor(promise, signal) {
   if (signal.aborted) return Promise.reject(signal.reason)
   return new Promise((resolve, reject) => {
@@ -35,7 +56,8 @@ function waitFor(promise, signal) {
   })
 }
 
-export function createResources({ source, admit, depth }) {
+export function createResources({ source, admit, depth, sharp, loadSharpAsset = () => readFile(new URL('../../dist/sharp-renderer.js', import.meta.url)) }) {
+  let sharpAsset
   async function serve(request, peer, kind) {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return response(request, 405, { error: 'Method not allowed' }, { allow: 'GET, HEAD' })
@@ -53,10 +75,20 @@ export function createResources({ source, admit, depth }) {
     }
     if (request.signal.aborted) return response(request, 408, { error: 'Request cancelled' })
     const url = new URL(request.url)
-    const expectedPath = kind === 'daily' ? DAILY_PATH : kind === 'depth' ? DEPTH_PATH : IMAGE_PATH
-    if (url.pathname !== expectedPath) return response(request, 404, { error: 'Not found' })
+    if (url.pathname !== RESOURCE_PATHS[kind]) return response(request, 404, { error: 'Not found' })
     if (url.search.length > 1024) return response(request, 400, { error: 'Invalid query' })
-    const allowedKeys = kind === 'daily' ? ['market', 'resolution'] : ['market', 'id', 'resolution']
+    if (kind === 'sharpAsset') {
+      if (url.search) return response(request, 400, { error: 'Invalid query' })
+      try {
+        sharpAsset ??= loadSharpAsset().catch(error => { sharpAsset = undefined; throw error })
+        const bytes = await waitFor(sharpAsset, request.signal)
+        return binaryResponse(request, bytes, 'text/javascript; charset=utf-8', 0)
+      } catch {
+        if (request.signal.aborted) return response(request, 408, { error: 'Request cancelled' })
+        return response(request, 503, { error: 'SHARP renderer unavailable' })
+      }
+    }
+    const allowedKeys = kind === 'daily' ? SOURCE_QUERY : IMAGE_QUERY
     if ([...url.searchParams.keys()].some(name => !allowedKeys.includes(name))
       || allowedKeys.some(name => url.searchParams.getAll(name).length > 1)) {
       return response(request, 400, { error: 'Invalid query' })
@@ -68,7 +100,11 @@ export function createResources({ source, admit, depth }) {
     if (kind === 'daily') {
       try {
         const metadata = await waitFor(source.daily(market, resolution), request.signal)
-        return response(request, 200, depth?.available ? { ...metadata, parallaxAvailable: true } : metadata)
+        return response(request, 200, {
+          ...metadata,
+          ...(depth?.available ? { parallaxAvailable: true } : {}),
+          ...(depth || sharp ? { parallaxModes: [...(depth?.available ? ['depth'] : []), ...(sharp?.available ? ['sharp'] : [])] } : {}),
+        })
       } catch {
         if (request.signal.aborted) return response(request, 408, { error: 'Request cancelled' })
         return response(request, 502, { error: 'Bing wallpaper unavailable; please retry later' }, { 'retry-after': '60' })
@@ -78,38 +114,40 @@ export function createResources({ source, admit, depth }) {
     if (!isBingImageId(id)) return response(request, 400, { error: 'Invalid Bing image ID' })
     const image = source.image(id, market, resolution)
     if (!image) return response(request, 404, { error: 'Image not cached; refresh daily metadata first' })
+    if (kind === 'scene') {
+      if (!sharp?.available) return response(request, 501, { error: 'SHARP must be configured on the server' })
+      try {
+        const { bytes, width, height, focalPx, nearDepth } = await waitFor(sharp.load(image.bytes), request.signal)
+        return binaryResponse(request, bytes, 'application/octet-stream', 3600, {
+          'content-encoding': 'gzip',
+          'x-bdt-scene-width': String(width),
+          'x-bdt-scene-height': String(height),
+          'x-bdt-scene-focal-px': String(focalPx),
+          'x-bdt-scene-near-depth': String(nearDepth),
+        })
+      } catch {
+        if (request.signal.aborted) return response(request, 408, { error: 'Request cancelled' })
+        return response(request, 503, { error: 'SHARP scene unavailable; please retry later' }, { 'retry-after': '5' })
+      }
+    }
     if (kind === 'depth') {
       if (!depth?.available) return response(request, 501, { error: 'Depth parallax requires optional dependency @huggingface/transformers' })
       try {
         const payload = await waitFor(depth.estimate(image.bytes), request.signal)
-        return new Response(request.method === 'HEAD' ? null : payload, {
-          headers: {
-            'content-type': 'application/octet-stream',
-            'content-length': String(payload.byteLength),
-            'cache-control': 'private, max-age=86400',
-            'x-content-type-options': 'nosniff',
-            'cross-origin-resource-policy': 'same-origin',
-          },
-        })
+        return binaryResponse(request, payload, 'application/octet-stream', 86400)
       } catch {
         if (request.signal.aborted) return response(request, 408, { error: 'Request cancelled' })
         return response(request, 503, { error: 'Depth map unavailable; please retry later' }, { 'retry-after': '60' })
       }
     }
-    return new Response(request.method === 'HEAD' ? null : image.bytes, {
-      headers: {
-        'content-type': image.contentType,
-        'content-length': String(image.bytes.byteLength),
-        'cache-control': 'private, max-age=3600',
-        'x-content-type-options': 'nosniff',
-        'cross-origin-resource-policy': 'same-origin',
-      },
-    })
+    return binaryResponse(request, image.bytes, image.contentType, 3600)
   }
   return {
     daily: (request, peer) => serve(request, peer, 'daily'),
     image: (request, peer) => serve(request, peer, 'image'),
     depth: (request, peer) => serve(request, peer, 'depth'),
+    scene: (request, peer) => serve(request, peer, 'scene'),
+    sharpAsset: (request, peer) => serve(request, peer, 'sharpAsset'),
   }
 }
 
@@ -119,29 +157,32 @@ export function apply(ctx) {
     if (peer.principal.kind === 'owner') table.push(bootThemeInjection())
   })
   ctx.effect(() => {
-    const source = createBingSource()
+    const source = createBingSource({ analyzeImage: createImageAnalyzer() })
     const depth = createDepthService()
+    const profileDir = ctx.get?.('profileContext')?.dir
+    const sharp = createSharpSceneService({ profileDir })
     const resources = createResources({
       source,
       depth,
+      sharp,
       admit: request => ctx.connection.admit({ headers: request.headers }),
     })
     const disposers = []
-    try {
-      // webServer.register() returns a plain disposer; it is not context-owned.
-      disposers.push(ctx.webServer.register({ kind: 'exact', path: DAILY_PATH, resource: resources.daily }))
-      disposers.push(ctx.webServer.register({ kind: 'exact', path: IMAGE_PATH, resource: resources.image }))
-      disposers.push(ctx.webServer.register({ kind: 'exact', path: DEPTH_PATH, resource: resources.depth }))
-    } catch (error) {
-      depth.dispose()
-      source.dispose()
-      for (const dispose of disposers.reverse()) dispose()
-      throw error
-    }
-    return () => {
+    function dispose() {
+      sharp.dispose()
       depth.dispose()
       source.dispose() // Abort every outstanding upstream fetch before releasing routes.
       for (const dispose of disposers.reverse()) dispose()
     }
+    try {
+      // webServer.register() returns a plain disposer; it is not context-owned.
+      for (const [name, path] of Object.entries(RESOURCE_PATHS)) {
+        disposers.push(ctx.webServer.register({ kind: 'exact', path, resource: resources[name] }))
+      }
+    } catch (error) {
+      dispose()
+      throw error
+    }
+    return dispose
   })
 }

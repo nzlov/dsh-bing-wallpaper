@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -120,6 +120,28 @@ test('corrupt disk cache entries are ignored and replaced, and disk cache prunes
   const files = (await readdir(depthDir)).filter(f => f.endsWith('.bdtdepth'))
   assert.ok(files.length <= 2, `expected at most 2 cached depth files, got ${files.length}`)
   recovered.dispose()
+})
+
+test('the browser receives a smoothed BDTD map and existing disk entries stay raw', async t => {
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'bdt-depth-smooth-'))
+  t.after(() => rm(cacheDir, { recursive: true, force: true }))
+  const depthDir = path.join(cacheDir, 'depth')
+  await mkdir(depthDir)
+  const bytes = new Uint8Array(41).fill(255, 20)
+  const input = encodeDepthPayload(bytes, 41, 1)
+  const file = path.join(depthDir, `${hashImageBytes(JPEG_A)}.bdtdepth`)
+  await writeFile(file, input)
+  const options = { cacheDir, width: 41, height: 1, inferImpl: () => assert.fail('legacy raw depth map should be reused') }
+  const first = createDepthService(options)
+  const smoothed = await first.estimate(JPEG_A)
+  assert.equal(isValidDepthPayload(smoothed), true)
+  assert.ok(smoothed[8 + 19] > 0 && smoothed[8 + 20] < 255)
+  assert.equal(await first.estimate(JPEG_A), smoothed)
+  first.dispose()
+  const restarted = createDepthService(options)
+  t.after(() => restarted.dispose())
+  assert.deepEqual(await restarted.estimate(JPEG_A), smoothed)
+  assert.deepEqual(await readFile(file), Buffer.from(input))
 })
 
 test('depth service reports unavailable and refuses inference when optional peer dependency is missing', async () => {

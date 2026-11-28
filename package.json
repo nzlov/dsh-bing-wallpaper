@@ -26,8 +26,10 @@
     "src/server",
     "src/shared",
     "dist/client.js",
+    "dist/sharp-renderer.js",
     "cordis.patch.yml",
     "locale/*.json",
+    "docs",
     "README.md",
     "README.zh-CN.md",
     "icon.svg",
@@ -56,8 +58,12 @@
     }
   },
   "devDependencies": {
-    "@material/material-color-utilities": "0.3.0",
+    "@sparkjsdev/spark": "2.4.0",
     "esbuild": "0.28.2",
     "three": "0.187.0"
+  },
+  "dependencies": {
+    "@material/material-color-utilities": "0.3.0",
+    "jpeg-js": "0.4.4"
   }
 }

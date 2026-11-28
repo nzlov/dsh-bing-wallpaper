@@ -1,83 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { transform } from 'esbuild';
 import * as core from '../src/client/theme/palette.js';
 import { createPlugin } from '../src/client/client-main.js';
-import { createAppearanceController } from '../src/client/theme/appearance.js';
 import { PREFERENCES_KEY } from '../src/shared/boot-theme.js';
 import { encodeDepthPayload } from '../src/server/depth-service.js';
+import { createDepthParallaxRenderer, decodeDepthPayload } from '../src/client/wallpaper/parallax-depth-renderer.js';
 import {
-  DEFAULT_PARALLAX_STRENGTH,
-  clearDepthMemoryCache,
-  decodeDepthPayload,
-  depthUrlFor,
-  mountParallaxWallpaper,
-  normalizeParallax,
-  parallaxMotion,
-  smoothDepthMap,
+  DEFAULT_PARALLAX_STRENGTH, mountParallaxWallpaper,
+  normalizeParallax, parallaxDataUrl, parallaxMotion,
 } from '../src/client/wallpaper/wallpaper-parallax.js';
 
-const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const IMAGE_URL = '/bing-daily-theme/api/image?id=OHR.Test_ZH-CN123_1920x1080.jpg';
 const DEPTH_URL = '/bing-daily-theme/api/depth?id=OHR.Test_ZH-CN123_1920x1080.jpg';
 const SAMPLE_PAYLOAD = encodeDepthPayload(new Uint8Array(16 * 9).fill(160), 16, 9);
+const flush = () => new Promise(setImmediate);
+let nextFixture = 0;
 
-test('parallax preferences default, clamp and migrate cleanly', () => {
+function setGlobals(t, globals) {
+  const previous = new Map(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  Object.assign(globalThis, globals);
+  t.after(() => {
+    for (const [key, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  });
+}
+
+test('parallax preferences keep the old depth default and migrate disabled settings', () => {
   assert.equal(core.DEFAULTS.parallaxStrength, DEFAULT_PARALLAX_STRENGTH);
+  assert.equal(core.DEFAULTS.parallaxMode, 'depth');
   assert.equal('parallax' in core.DEFAULTS, false);
-  assert.deepEqual(normalizeParallax(), { parallaxStrength: 45 });
-  assert.deepEqual(normalizeParallax({ parallaxStrength: 0 }), { parallaxStrength: 0 });
-  assert.deepEqual(normalizeParallax({ parallaxStrength: 200 }), { parallaxStrength: 100 });
-  assert.deepEqual(normalizeParallax({ parallaxStrength: -5 }), { parallaxStrength: 0 });
-  assert.deepEqual(normalizeParallax({ parallaxStrength: 62.6 }), { parallaxStrength: 63 });
-  assert.deepEqual(normalizeParallax({ parallax: false, parallaxStrength: 80 }), { parallaxStrength: 0 });
-  assert.deepEqual(normalizeParallax({ parallax: true, parallaxStrength: 60 }), { parallaxStrength: 60 });
-  for (const invalid of [NaN, Infinity, -Infinity, null, undefined, '50', {}, []]) {
+  assert.deepEqual(normalizeParallax(), { parallaxMode: 'depth', parallaxStrength: 45 });
+  assert.deepEqual(normalizeParallax({ parallaxMode: 'sharp', parallaxStrength: 200 }), { parallaxMode: 'sharp', parallaxStrength: 100 });
+  assert.deepEqual(normalizeParallax({ parallaxMode: 'unknown', parallaxStrength: -5 }), { parallaxMode: 'depth', parallaxStrength: 0 });
+  assert.deepEqual(normalizeParallax({ parallax: false, parallaxStrength: 80 }), { parallaxMode: 'depth', parallaxStrength: 0 });
+  for (const invalid of [undefined, null, NaN, Infinity, '30', {}]) {
     assert.equal(normalizeParallax({ parallaxStrength: invalid }).parallaxStrength, DEFAULT_PARALLAX_STRENGTH);
   }
-  const migrated = core.normalizeSettings({ enabled: true, mode: 'dark', strength: 60 });
-  assert.equal(migrated.parallaxStrength, 45);
 });
 
-test('depthUrlFor and decodeDepthPayload strictly validate canonical URLs and BDTD binaries', () => {
-  assert.equal(depthUrlFor(IMAGE_URL), DEPTH_URL);
+test('only canonical wallpaper paths can request the model output for either mode', () => {
+  assert.equal(parallaxDataUrl(IMAGE_URL, 'depth'), DEPTH_URL);
   assert.equal(
-    depthUrlFor('/bing-daily-theme/api/image?market=en-US&id=OHR.Test_EN-US123_1920x1080.jpg'),
-    '/bing-daily-theme/api/depth?market=en-US&id=OHR.Test_EN-US123_1920x1080.jpg',
+    parallaxDataUrl('/bing-daily-theme/api/image?market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg', 'sharp'),
+    '/bing-daily-theme/api/scene?market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg',
   );
-  assert.equal(
-    depthUrlFor('/bing-daily-theme/api/image?resolution=2k&id=OHR.Test_ZH-CN123_1920x1080.jpg'),
-    '/bing-daily-theme/api/depth?resolution=2k&id=OHR.Test_ZH-CN123_1920x1080.jpg',
-  );
-  assert.equal(
-    depthUrlFor('/bing-daily-theme/api/image?market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg'),
-    '/bing-daily-theme/api/depth?market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg',
-  );
-  for (const bad of ['', null, 'https://evil.test/image.jpg', '/bing-daily-theme/api/image?id=../secret', '/bing-daily-theme/api/image?resolution=8k&id=OHR.Test_ZH-CN123_1920x1080.jpg']) {
-    assert.equal(depthUrlFor(bad), '');
+  for (const invalid of ['https://example.org' + IMAGE_URL, IMAGE_URL + '&q=1', IMAGE_URL + '#fragment', '/api/image?id=x', null]) {
+    assert.equal(parallaxDataUrl(invalid, 'depth'), '');
   }
-  const decoded = decodeDepthPayload(SAMPLE_PAYLOAD);
-  assert.deepEqual({ width: decoded.width, height: decoded.height, len: decoded.data.byteLength }, { width: 16, height: 9, len: 144 });
+  assert.equal(parallaxDataUrl(IMAGE_URL, 'anything'), '');
+  assert.deepEqual(decodeDepthPayload(SAMPLE_PAYLOAD), { width: 16, height: 9, data: SAMPLE_PAYLOAD.slice(8) });
   assert.equal(decodeDepthPayload(SAMPLE_PAYLOAD.slice(0, -1)), null);
-  assert.equal(decodeDepthPayload(new Uint8Array([0, 0, 0, 0, 0, 2, 0, 2, 1, 2, 3, 4])), null);
-});
-
-test('smoothDepthMap eliminates sharp tearing cliffs while preserving foreground/background contrast', () => {
-  const w = 64, h = 36;
-  const cliff = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cliff[y * w + x] = x < w / 2 ? 10 : 245;
-  const smoothed = smoothDepthMap(cliff, w, h, 4.5);
-  assert.equal(smoothed.byteLength, w * h);
-  let maxJump = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 1; x < w; x++) {
-      maxJump = Math.max(maxJump, Math.abs(smoothed[y * w + x] - smoothed[y * w + x - 1]));
-    }
-  }
-  assert.ok(maxJump < 30, `smoothed cliff step (${maxJump}) stays continuous without tearing`);
-  assert.ok(smoothed[h / 2 * w + 2] < 20, 'far side stays far');
-  assert.ok(smoothed[h / 2 * w + w - 3] > 230, 'near side stays near');
 });
 
 test('parallaxMotion approaches target smoothly and settles without overshoot', () => {
@@ -93,7 +68,8 @@ test('parallaxMotion approaches target smoothly and settles without overshoot', 
   assert.deepEqual(pos, target);
 });
 
-function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 1280, height = 900, reducedMotion = false, decodeReject = false, depthStatus = 200, depthBody = SAMPLE_PAYLOAD } = {}) {
+function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 1280, height = 900, reducedMotion = false, depthStatus = 200, depthBody = SAMPLE_PAYLOAD } = {}) {
+  const dataUrl = DEPTH_URL.replace('OHR.Test_', `OHR.Test${++nextFixture}_`);
   const listeners = new Map(), frames = new Map(), attrs = new Map();
   let frameId = 0, time = 0, draws = 0, blits = 0, shadersCompiled = 0, depthFetches = 0, mipmapsGenerated = 0;
   const uniforms = new Map();
@@ -118,17 +94,19 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
   const rightPhoto = makeNode('div', { attributes: { 'data-bdt-sidebar-image': '' }, box: { left: 1000, top: 0, width: 280, height: 900 } });
   const rightLayer = makeNode('div', { attributes: { 'data-bdt-sidebar-background': '' }, visibility: 'hidden', children: [rightPhoto] });
 
-  const uploadedTextures = [];
+  const uploadedTextures = [], shaders = [];
   const texParams = new Map();
-  let boundTexture = null;
+  let unit = 0, nextTexture = 0;
+  const boundTextures = new Map();
   const glMock = {
     VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4,
     ARRAY_BUFFER: 5, STATIC_DRAW: 6, FLOAT: 7, TEXTURE0: 8, TEXTURE1: 9,
     TEXTURE_2D: 10, CLAMP_TO_EDGE: 11, LINEAR: 12, RGBA: 13, UNSIGNED_BYTE: 14,
-    LUMINANCE: 15, UNPACK_ALIGNMENT: 16, TRIANGLE_STRIP: 17,
+    LUMINANCE: 15, UNPACK_ALIGNMENT: 16, TRIANGLE_STRIP: 17, MAX_TEXTURE_SIZE: 24, R8: 25, RED: 26, NO_ERROR: 0,
+    getExtension: () => null, getError: () => 0, getParameter: () => 4096,
     TEXTURE_WRAP_S: 18, TEXTURE_WRAP_T: 19, TEXTURE_MIN_FILTER: 20, TEXTURE_MAG_FILTER: 21,
     createShader: type => ({ type }),
-    shaderSource() {},
+    shaderSource(_shader, source) { shaders.push(source); },
     compileShader() { shadersCompiled++; },
     getShaderParameter: () => true,
     deleteShader() {},
@@ -143,9 +121,9 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
     deleteBuffer() {},
     getAttribLocation: () => 0,
     getUniformLocation: (_p, name) => name,
-    createTexture: () => ({ id: uploadedTextures.length }),
-    bindTexture(_target, tex) { boundTexture = tex; },
-    texParameteri(_target, pname, param) { texParams.set(`${boundTexture?.id}:${pname}`, param); },
+    createTexture: () => ({ id: nextTexture++ }),
+    bindTexture(_target, tex) { boundTextures.set(unit, tex); },
+    texParameteri(_target, pname, param) { texParams.set(`${boundTextures.get(unit)?.id}:${pname}`, param); },
     texImage2D(...args) { uploadedTextures.push(args); },
     deleteTexture() {},
     pixelStorei() {},
@@ -153,7 +131,7 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
     useProgram() {},
     enableVertexAttribArray() {},
     vertexAttribPointer() {},
-    activeTexture() {},
+    activeTexture(next) { unit = next; },
     uniform1i(loc, v) { uniforms.set(loc, v); },
     uniform2f(loc, x, y) { uniforms.set(loc, [x, y]); },
     uniform1f(loc, v) { uniforms.set(loc, v); },
@@ -166,13 +144,16 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
   };
 
   const createdCanvases = [];
-  const document = Object.assign(new EventTarget(), {
-    documentElement: root,
+  const document = {
+    documentElement: root, hidden: false,
+    addEventListener(name, fn) { listeners.set(`document:${name}`, fn); },
+    removeEventListener(name) { listeners.delete(`document:${name}`); },
     createElement(tag) {
       assert.equal(tag, 'canvas');
       const node = makeNode('canvas', {
         getContext(type) {
-          if (type === 'webgl2' || type === 'webgl') return webgl ? glMock : null;
+          if (type === 'webgl2') return webgl && webgl2 ? glMock : null;
+          if (type === 'webgl') return webgl ? glMock : null;
           if (type === '2d') return { drawImage() { blits++; }, clearRect() {} };
           return null;
         },
@@ -185,7 +166,7 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
       if (sel === '[data-bdt-sidebar-canvas]') return [leftPhoto, rightPhoto].flatMap(p => p.children.filter(c => Object.hasOwn(c.attributes, 'data-bdt-sidebar-canvas')));
       return [];
     },
-  });
+  };
 
   const mediaListeners = new Set();
   const media = {
@@ -196,9 +177,6 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
 
   const window = {
     innerWidth: width, innerHeight: height, devicePixelRatio: dpr,
-    Image: class {
-      decode() { return decodeReject ? Promise.reject(new Error('bad image')) : Promise.resolve(); }
-    },
     matchMedia: () => media,
     getComputedStyle: el => ({ visibility: el.visibility || 'visible' }),
     requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
@@ -209,7 +187,7 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
 
   const fetchImpl = async (url, init) => {
     depthFetches++;
-    assert.equal(url, DEPTH_URL);
+    assert.equal(url, dataUrl);
     assert.equal(init.credentials, 'same-origin');
     return new Response(depthBody, { status: depthStatus });
   };
@@ -227,57 +205,63 @@ function createParallaxHarness({ webgl = true, webgl2 = false, dpr = 1, width = 
   };
 
   return {
-    document, window, root, leftLayer, leftPhoto, rightPhoto, attrs, listeners, frames, mediaListeners,
+    document, window, root, leftLayer, leftPhoto, rightPhoto, attrs, listeners, frames, media, mediaListeners, dataUrl, shaders,
     createdCanvases, uploadedTextures, texParams, uniforms, fetchImpl, flushFrames,
     getDraws: () => draws, getBlits: () => blits, getShadersCompiled: () => shadersCompiled, getDepthFetches: () => depthFetches, getMipmapsGenerated: () => mipmapsGenerated,
   };
 }
 
-test('mountParallaxWallpaper fetches backend depth map once per session, renders WebGL, syncs sidebars and respects reduced motion', async () => {
-  clearDepthMemoryCache();
+function mount(h, settings = core.DEFAULTS, createRenderer = createDepthParallaxRenderer) {
+  return mountParallaxWallpaper({
+    document: h.document, window: h.window, url: IMAGE_URL, dataUrl: h.dataUrl,
+    imageWidth: 1920, imageHeight: 1080, photo: { naturalWidth: 1920, naturalHeight: 1080 },
+    settings, fetchImpl: h.fetchImpl, createRenderer,
+  });
+}
+
+async function startRenderer(h) {
+  h.flushFrames(2);
+  await flush();
+  h.flushFrames();
+}
+
+test('motion updates depth uniforms without reloading images or a backend depth map', async t => {
   const h = createParallaxHarness();
   const settings = core.normalizeSettings({ filterMode: 'blur', filterAmounts: { blur: 12 }, parallaxStrength: 60 });
-  const controller = mountParallaxWallpaper({
-    document: h.document, window: h.window, url: 'blob:test', depthUrl: DEPTH_URL,
-    imageWidth: 1920, imageHeight: 1080, settings, fetchImpl: h.fetchImpl,
-  });
-  await new Promise(setImmediate);
+  const controller = mount(h, settings);
+  t.after(() => controller.dispose());
+  await startRenderer(h);
 
   assert.equal(h.getDepthFetches(), 1);
   assert.equal(h.getShadersCompiled(), 2);
   assert.equal(h.getDraws(), 1);
   assert.equal(h.attrs.has('data-bdt-parallax-active'), true);
-  assert.equal(h.leftPhoto.children.length, 1, 'visible wallpaper sidebar receives a synced canvas');
-  assert.equal(h.rightPhoto.children.length, 0, 'hidden/theme sidebar does not mount a canvas');
-  assert.equal(h.getBlits(), 1, '1 visible sidebar blit without frontend CPU downscaling');
-  assert.equal(h.uploadedTextures.length, 2, 'uploads image texture and server depth texture');
-  assert.equal(h.uploadedTextures[1][3], 16);
-  assert.equal(h.uploadedTextures[1][4], 9);
-
-  const mainCanvas = h.createdCanvases[0];
-  assert.equal(mainCanvas.style.inset, '-36px');
-  assert.equal(mainCanvas.style.zIndex, '-3', 'parallax canvas sits at the wallpaper layer behind visibility matte and weather');
-  assert.equal(mainCanvas.style.filter, 'blur(12px)');
+  assert.equal(h.leftPhoto.children.length, 1);
+  assert.equal(h.rightPhoto.children.length, 0);
+  assert.equal(h.getBlits(), 1);
+  assert.equal(h.uploadedTextures.length, 2);
+  assert.equal(h.uploadedTextures[1][2], 15, 'WebGL1 uses a luminance texture');
+  assert.deepEqual(h.uploadedTextures[1][8], SAMPLE_PAYLOAD.slice(8), 'uploads the server data as delivered');
+  const canvas = h.createdCanvases[0];
+  assert.equal(canvas.style.inset, '-36px');
+  assert.equal(canvas.style.zIndex, '-3');
+  assert.equal(canvas.style.filter, 'blur(12px)');
 
   h.listeners.get('window:pointermove')({ clientX: 1100, clientY: 200 });
-  assert.equal(h.frames.size, 1);
+  h.flushFrames(1);
+  const first = h.uniforms.get('u_offset')[0];
+  assert.ok(first > 0 && first < 0.7);
   const steps = h.flushFrames();
-  assert.ok(steps > 1 && steps < 120, `settled in ${steps} frames`);
-  assert.equal(h.frames.size, 0);
-  assert.equal(h.getDraws(), 1 + steps);
+  assert.ok(steps > 1 && steps < 120);
+  assert.equal(h.getDraws(), 2 + steps);
+  assert.equal(h.getBlits(), h.getDraws());
+  assert.equal(h.getDepthFetches(), 1);
+  assert.equal(h.uploadedTextures.length, 2);
 
   controller.update({ settings: core.normalizeSettings({ filterMode: 'grayscale', parallaxStrength: 90 }) });
-  assert.equal(mainCanvas.style.inset, '0');
-  assert.equal(mainCanvas.style.filter, 'grayscale(100%)');
-
-  for (const fn of h.mediaListeners) fn({ matches: true });
-  assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
-  assert.equal(h.leftPhoto.children.length, 0);
-  assert.equal(mainCanvas.style.display, 'none');
-
-  for (const fn of h.mediaListeners) fn({ matches: false });
-  assert.equal(h.attrs.has('data-bdt-parallax-active'), true);
-  assert.equal(h.leftPhoto.children.length, 1);
+  h.flushFrames();
+  assert.equal(canvas.style.inset, '0');
+  assert.equal(canvas.style.filter, 'grayscale(100%)');
 
   controller.dispose();
   assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
@@ -285,19 +269,13 @@ test('mountParallaxWallpaper fetches backend depth map once per session, renders
   assert.equal(h.root.children.length, 0);
   assert.equal(h.listeners.size, 0);
 
-  // Remounting for the same depthUrl reuses session memory cache without refetching.
-  const remount = mountParallaxWallpaper({
-    document: h.document, window: h.window, url: 'blob:test', depthUrl: DEPTH_URL,
-    imageWidth: 1920, imageHeight: 1080, settings, fetchImpl: h.fetchImpl,
-  });
-  await new Promise(setImmediate);
-  assert.equal(h.getDepthFetches(), 1, 'remount reuses cached depth map');
-  assert.equal(h.attrs.has('data-bdt-parallax-active'), true);
-  remount.dispose();
+  const remount = mount(h, settings);
+  t.after(() => remount.dispose());
+  await startRenderer(h);
+  assert.equal(h.getDepthFetches(), 1, 'another mount can reuse the current depth map');
 });
 
 test('iframe pointer movement drives the shared wallpaper across insertion, navigation and removal', async () => {
-  clearDepthMemoryCache();
   const h = createParallaxHarness();
   function frameDocument() {
     return Object.assign(new EventTarget(), {
@@ -330,11 +308,8 @@ test('iframe pointer movement drives the shared wallpaper across insertion, navi
   child.iframes.push(iframe(nested, 20, 20));
   const tile = iframe(child, 800, 500, 2);
   top.iframes.push(foreign);
-  const controller = mountParallaxWallpaper({
-    document: top, window: h.window, url: 'blob:test', depthUrl: DEPTH_URL,
-    imageWidth: 1920, imageHeight: 1080, settings: core.DEFAULTS, fetchImpl: h.fetchImpl,
-  });
-  await new Promise(setImmediate);
+  const controller = mount({ ...h, document: top });
+  await startRenderer(h);
 
   top.iframes.push(tile);
   observers.get(top)([{ addedNodes: [tile], removedNodes: [] }]);
@@ -344,9 +319,7 @@ test('iframe pointer movement drives the shared wallpaper across insertion, navi
 
   const reloaded = frameDocument();
   tile.contentDocument = reloaded;
-  const load = new Event('load');
-  Object.defineProperty(load, 'target', { value: tile });
-  top.dispatchEvent(load);
+  h.listeners.get('document:load')({ target: tile });
   nested.pointermove(0, 0);
   assert.equal(h.flushFrames(), 0);
   reloaded.pointermove(98, 98);
@@ -361,167 +334,237 @@ test('iframe pointer movement drives the shared wallpaper across insertion, navi
   assert.equal(observers.size, 0);
 });
 
-test('mountParallaxWallpaper uses WebGL2 mipmaps when downscaling and Catmull-Rom bicubic when magnifying', async () => {
-  clearDepthMemoryCache();
-  const h = createParallaxHarness({ webgl2: true, width: 1280, height: 720, dpr: 1 });
-  const c = mountParallaxWallpaper({
-    document: h.document, window: h.window, url: 'blob:test', depthUrl: DEPTH_URL,
-    imageWidth: 1920, imageHeight: 1080, settings: core.DEFAULTS, fetchImpl: h.fetchImpl,
-  });
-  await new Promise(setImmediate);
-  assert.equal(h.getMipmapsGenerated(), 1, 'generates NPOT mipmaps on WebGL2');
-  assert.equal(h.uniforms.get('u_useBicubic'), 0, 'uses hardware trilinear mipmaps when downscaling');
-  assert.equal(h.texParams.get('0:20'), 22, 'enables LINEAR_MIPMAP_LINEAR when downscaling');
+test('WebGL2 compiles GLSL 3 with a single-channel depth texture and chooses the photo filter for the display scale', async t => {
+  const h = createParallaxHarness({ webgl2: true, width: 1280, height: 720 });
+  const controller = mount(h);
+  t.after(() => controller.dispose());
+  await startRenderer(h);
+  assert.ok(h.shaders.every(source => source.startsWith('#version 300 es\n')));
+  assert.equal(h.uploadedTextures[1][2], 25);
+  assert.equal(h.uploadedTextures[1][6], 26);
+  assert.equal(h.getMipmapsGenerated(), 1);
+  assert.equal(h.uniforms.get('u_useBicubic'), 0);
+  assert.equal(h.texParams.get('0:20'), 22);
 
   h.window.devicePixelRatio = 2;
   h.listeners.get('window:resize')();
-  assert.equal(h.uniforms.get('u_useBicubic'), 1, 'switches to Catmull-Rom bicubic on HiDPI upscaling');
-  assert.equal(h.texParams.get('0:20'), 12, 'switches TEXTURE_MIN_FILTER back to LINEAR so sampleBicubic always reads mip 0');
-  c.dispose();
-
-  const bundle = await read('dist/client.js');
-  assert.ok(bundle.includes('sampleBicubic'), 'built client.js ships Catmull-Rom bicubic shader');
-  assert.ok(!bundle.includes('const int STEPS = 8'), 'built client.js does not ship legacy stepped raymarcher');
+  h.flushFrames();
+  assert.equal(h.uniforms.get('u_useBicubic'), 1);
+  assert.equal(h.texParams.get('0:20'), 12);
 });
 
-test('mountParallaxWallpaper degrades silently when WebGL, backend depth API or image decode fails', async () => {
-  clearDepthMemoryCache();
-  for (const opts of [{ webgl: false }, { decodeReject: true }, { depthStatus: 503 }, { depthBody: new Uint8Array([1, 2, 3]) }]) {
-    clearDepthMemoryCache();
-    const h = createParallaxHarness(opts);
-    const c = mountParallaxWallpaper({
-      document: h.document, window: h.window, url: 'blob:test', depthUrl: DEPTH_URL,
-      imageWidth: 1920, imageHeight: 1080, settings: core.DEFAULTS, fetchImpl: h.fetchImpl,
-    });
-    await new Promise(setImmediate);
+test('SHARP keeps source pixel density across wallpaper resolutions and viewport crops', async t => {
+  for (const width of [1920, 2560, 3840]) {
+    const h = createParallaxHarness({ width: 960, height: 540 });
+    const controller = mount(h, core.DEFAULTS, async () => ({
+      sourceWidth: width, maxCanvasSide: 8192, draw() {}, dispose() {},
+    }));
+    t.after(() => controller.dispose());
+    controller.update({ imageWidth: width, imageHeight: width * 9 / 16 });
+    await startRenderer(h);
+    const canvas = h.createdCanvases[0];
+    assert.deepEqual([canvas.width, canvas.height], [width, width * 9 / 16]);
+    h.window.innerWidth = 480;
+    h.listeners.get('window:resize')();
+    h.flushFrames();
+    assert.deepEqual([canvas.width, canvas.height], [width / 2, width * 9 / 16]);
+  }
+});
+
+test('the common canvas starts once and suspends drawing in background tabs or reduced motion', async t => {
+  const h = createParallaxHarness({ reducedMotion: true });
+  let starts = 0, dirty, disposed = 0, calls = [];
+  const controller = mount(h, core.DEFAULTS, async ({ invalidate }) => {
+    starts++;
+    dirty = invalidate;
+    return { draw(layout) { calls.push(layout); }, dispose() { disposed++; }, maxPixels: 800 * 450 };
+  });
+  t.after(() => controller.dispose());
+  await flush();
+  assert.equal(starts, 0);
+
+  h.media.matches = false;
+  for (const fn of h.mediaListeners) fn();
+  await startRenderer(h);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].pixelWidth * calls[0].pixelHeight <= 801 * 451);
+  assert.equal(h.leftPhoto.children.length, 1);
+  dirty();
+  h.flushFrames();
+  assert.equal(calls.length, 2);
+
+  h.document.hidden = true;
+  h.listeners.get('document:visibilitychange')();
+  dirty();
+  h.flushFrames();
+  assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
+  assert.equal(h.leftPhoto.children.length, 0);
+  assert.equal(calls.length, 2);
+  h.document.hidden = false;
+  h.listeners.get('document:visibilitychange')();
+  h.flushFrames();
+  assert.equal(calls.length, 3);
+
+  controller.update({ settings: { ...core.DEFAULTS, parallaxStrength: 0 } });
+  assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
+  controller.update({ settings: core.DEFAULTS });
+  h.flushFrames();
+  assert.equal(starts, 1);
+  assert.equal(calls.length, 4);
+  assert.equal(disposed, 0);
+});
+
+test('missing WebGL, a failed depth response and context loss preserve the static wallpaper', async t => {
+  for (const options of [{ webgl: false }, { depthStatus: 503 }, { depthBody: new Uint8Array(1) }]) {
+    const h = createParallaxHarness(options);
+    const controller = mount(h);
+    t.after(() => controller.dispose());
+    await startRenderer(h);
     assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
-    assert.equal(h.getDraws(), 0);
-    c.dispose();
+    assert.equal(h.root.children.length, 0);
   }
+  const h = createParallaxHarness();
+  const controller = mount(h);
+  t.after(() => controller.dispose());
+  await startRenderer(h);
+  h.listeners.get('canvas:webglcontextlost')({ preventDefault() {} });
+  assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
+  assert.equal(h.root.children.length, 0);
 });
 
-test('settings render single bilingual parallax slider where 0 disables parallax without refetching', async t => {
-  const en = JSON.parse(await read('locale/en.json')), zh = JSON.parse(await read('locale/zh.json'));
-  for (const dict of [en, zh]) {
-    assert.ok(dict.parallax);
-    assert.ok(dict.parallaxOff);
-    assert.ok(dict.parallaxUnavailable);
-    assert.equal('parallaxStrength' in dict, false);
-  }
-  const slots = new Map(), disposers = [];
-  const saved = new Map(['localStorage', 'document', 'window', 'Image'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
-  t.after(() => {
-    for (const d of disposers.reverse()) d();
-    for (const [k, d] of saved) if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k];
-  });
-  const storage = new Map([[PREFERENCES_KEY, JSON.stringify(core.normalizeSettings({ mode: 'follow' }))]]);
-  globalThis.localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) };
-  globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  const pixels = new Uint8ClampedArray(112 * 112 * 4);
-  for (let i = 0; i < pixels.length; i += 4) pixels.set([40, 100, 180, 255], i);
-  globalThis.document = {
-    getElementById: () => null, addEventListener() {}, removeEventListener() {},
-    createElement: () => ({ getContext: () => ({ drawImage() {}, getImageData: () => ({ data: pixels }) }) }),
+test('the wallpaper gets a paint before WebGL initialization and stays visible until depth arrives', async t => {
+  const h = createParallaxHarness();
+  let deliverDepth, requested = 0;
+  h.fetchImpl = () => {
+    requested++;
+    return new Promise(resolve => { deliverDepth = resolve; });
   };
-  globalThis.Image = class { decode() { return Promise.resolve(); } };
+  const controller = mount(h);
+  t.after(() => controller.dispose());
+  h.flushFrames(1);
+  assert.equal(h.createdCanvases.length, 0);
+  assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
+  h.flushFrames(1);
+  assert.equal(requested, 1);
+  assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
+  assert.equal(h.getDraws(), 0);
+  deliverDepth(new Response(SAMPLE_PAYLOAD));
+  await flush();
+  h.flushFrames();
+  assert.equal(h.attrs.has('data-bdt-parallax-active'), true);
+  assert.equal(h.getDraws(), 1);
+  assert.equal(requested, 1);
+});
 
-  let overrides = 0, loaded;
-  const ready = new Promise(resolve => { loaded = resolve; });
-  const fetch = t.mock.method(globalThis, 'fetch', async url => url.includes('/api/daily')
-    ? Response.json({ market: 'zh-CN', imageUrl: IMAGE_URL, date: '2026-11-24', parallaxAvailable: true })
-    : new Response(new Blob(['image'], { type: 'image/jpeg' })));
+const nodes = node => typeof node === 'object' ? [node, ...node.children.flatMap(nodes)] : [];
 
+async function settingsApp(t, parallaxModes, { photoPending, depthPending, language = 'en' } = {}) {
+  const en = JSON.parse(await readFile(new URL('../locale/en.json', import.meta.url), 'utf8'));
+  const zh = JSON.parse(await readFile(new URL('../locale/zh.json', import.meta.url), 'utf8'));
+  const dictionary = language === 'zh' ? zh : en;
+  const localeSnapshot = { active: language };
+  const storage = new Map([[PREFERENCES_KEY, JSON.stringify({ mode: 'follow' })]]);
+  const disposers = [], slots = new Map();
+  t.after(() => { for (const dispose of disposers.reverse()) dispose(); });
+  setGlobals(t, {
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+    document: { addEventListener() {}, removeEventListener() {}, getElementById() { return null; } },
+    window: { WebGLRenderingContext: depthPending ? class {} : undefined, addEventListener() {}, removeEventListener() {} },
+    Image: class { async decode() { assert.equal(this.src, IMAGE_URL); await photoPending; } },
+  });
+  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (url === DEPTH_URL) {
+      assert.ok(depthPending);
+      assert.equal(options.priority, 'low');
+      return depthPending;
+    }
+    assert.ok(url.includes('/api/daily'));
+    return Response.json({ market: 'zh-CN', imageUrl: IMAGE_URL, date: '2026-11-24', parallaxModes });
+  });
   const React = {
-    createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(c => c != null && c !== false) }),
-    useSyncExternalStore: (_, get) => get(), useState: init => [typeof init === 'function' ? init() : init, () => {}],
-    useMemo: make => make(), useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child != null && child !== false) }),
+    useSyncExternalStore: (_, get) => get(), useState: initial => [initial(), () => {}], useMemo: make => make(),
+    useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
   };
-  createPlugin(React, core, { en, zh }, createAppearanceController).apply({
-    effect(fn) { const d = fn(); if (typeof d === 'function') disposers.push(d); }, on() {},
-    locale: { register() {}, bind: () => k => en[k] ?? k, subscribe: () => () => {}, getSnapshot: () => 'en' },
-    slots: { inject: (_, fn) => fn(), register: (opts, comp) => { slots.set(opts.id, comp); return () => {}; } },
-    theme: { getTheme: () => ({ preference: 'light', active: { colorScheme: 'light' } }), setTheme() {}, overrideTokens() { overrides++; loaded(); return () => {}; } },
+  let resolveTheme;
+  const themeReady = new Promise(resolve => { resolveTheme = resolve; });
+  createPlugin(React, core, { en, zh }, () => ({ sync() {}, restore() {}, changed() {} })).apply({
+    effect(fn) { const dispose = fn(); if (typeof dispose === 'function') disposers.push(dispose); }, on() {},
+    locale: { register() {}, bind: () => key => dictionary[key] ?? key, subscribe: () => () => {}, getSnapshot: () => localeSnapshot },
+    slots: { inject: (_, register) => register(), register(options, component) { slots.set(options.id, component); return () => {}; } },
+    theme: { getTheme: () => ({ active: { colorScheme: 'light' } }), overrideTokens() { resolveTheme(); return () => {}; } },
   });
-  await ready;
+  if (!photoPending) await themeReady;
+  const screen = () => nodes(slots.get('bing-daily-theme')());
+  return {
+    en, zh, fetch, themeReady, screen, saved: () => JSON.parse(storage.get(PREFERENCES_KEY)),
+    control: id => screen().find(node => node.props.id === `bdt-${id}`),
+    wallpaper: () => slots.get('bing-daily-theme.wallpaper')()?.children[0],
+  };
+}
 
-  const settings = slots.get('bing-daily-theme'), wallpaper = slots.get('bing-daily-theme.wallpaper');
-  const nodes = n => typeof n === 'object' ? [n, ...n.children.flatMap(nodes)] : [];
-  const find = id => nodes(settings()).find(n => n.props.id === id);
+test('photo and depth start concurrently and a pending or failed depth request preserves the wallpaper and theme', { timeout: 5000 }, async t => {
+  let resolvePhoto, rejectDepth;
+  const photoPending = new Promise(resolve => { resolvePhoto = resolve; });
+  const depthPending = new Promise((_, reject) => { rejectDepth = reject; });
+  const { fetch, themeReady, wallpaper } = await settingsApp(t, ['depth'], { photoPending, depthPending });
+  await flush();
+  assert.equal(fetch.mock.callCount(), 2);
+  assert.equal(fetch.mock.calls[1].arguments[0], DEPTH_URL);
+  assert.equal(wallpaper(), undefined);
 
-  const slider = find('bdt-parallax');
-  assert.equal(slider.props.type, 'range');
-  assert.equal(slider.props.min, 0);
-  assert.equal(slider.props.max, 100);
-  assert.equal(slider.props.value, 45);
-  assert.equal(slider.props.disabled, false);
-  assert.equal(find('bdt-parallaxHint'), undefined);
-  assert.equal(find('bdt-parallaxStrength'), undefined);
-  assert.equal(nodes(settings()).find(n => n.type === 'output' && n.props.htmlFor === 'bdt-parallax').children[0], '45%');
-  assert.ok(wallpaper().children[0].includes('html[data-bdt-parallax-active]::before{display:none}'));
-  const parsed = await transform(wallpaper().children[0], { loader: 'css' });
-  assert.deepEqual(parsed.warnings, []);
+  resolvePhoto();
+  await themeReady;
+  const first = wallpaper();
+  assert.ok(first.includes(IMAGE_URL));
 
-  const fetchesBefore = fetch.mock.callCount(), overridesBefore = overrides;
-  find('bdt-parallax').props.onChange({ target: { value: '75' } });
-  assert.equal(JSON.parse(storage.get(PREFERENCES_KEY)).parallaxStrength, 75);
-  assert.equal(nodes(settings()).find(n => n.type === 'output' && n.props.htmlFor === 'bdt-parallax').children[0], '75%');
-  find('bdt-parallax').props.onChange({ target: { value: '0' } });
-  assert.equal(JSON.parse(storage.get(PREFERENCES_KEY)).parallaxStrength, 0);
-  assert.equal(find('bdt-parallax').props['aria-valuetext'], en.parallaxOff);
-  assert.equal(nodes(settings()).find(n => n.type === 'output' && n.props.htmlFor === 'bdt-parallax').children[0], en.parallaxOff);
-  assert.equal(wallpaper().children[0].includes('data-bdt-parallax-active'), false);
-  assert.equal(fetch.mock.callCount(), fetchesBefore);
-  assert.equal(overrides, overridesBefore);
+  rejectDepth(new Error('Depth inference unavailable'));
+  await flush();
+  assert.equal(wallpaper(), first);
+  assert.equal(fetch.mock.callCount(), 2);
 });
 
-test('settings disable parallax slider with hint when optional runtime is absent', async t => {
-  const en = JSON.parse(await read('locale/en.json')), zh = JSON.parse(await read('locale/zh.json'));
-  const slots = new Map(), disposers = [];
-  const saved = new Map(['localStorage', 'document', 'window', 'Image'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
-  t.after(() => {
-    for (const d of disposers.reverse()) d();
-    for (const [k, d] of saved) if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k];
-  });
-  const storage = new Map([[PREFERENCES_KEY, JSON.stringify(core.normalizeSettings({ mode: 'follow', parallaxStrength: 60 }))]]);
-  globalThis.localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) };
-  globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  const pixels = new Uint8ClampedArray(112 * 112 * 4);
-  for (let i = 0; i < pixels.length; i += 4) pixels.set([40, 100, 180, 255], i);
-  globalThis.document = {
-    getElementById: () => null, addEventListener() {}, removeEventListener() {},
-    createElement: () => ({ getContext: () => ({ drawImage() {}, getImageData: () => ({ data: pixels }) }) }),
-  };
-  globalThis.Image = class { decode() { return Promise.resolve(); } };
+test('settings select either server mode and keep one shared display image and an original preview', { timeout: 5000 }, async t => {
+  const { en, zh, fetch, screen, control, saved, wallpaper } = await settingsApp(t, ['depth', 'sharp']);
+  for (const dict of [en, zh]) for (const key of ['parallax', 'parallaxOff', 'parallaxMode', 'parallaxMode.depth', 'parallaxMode.sharp']) assert.ok(dict[key]);
+  assert.equal(control('parallaxMode').props.value, 'depth');
+  assert.deepEqual(control('parallaxMode').children.map(option => option.props.value), ['depth', 'sharp']);
+  assert.equal(control('parallax').props.value, 45);
+  assert.equal(control('parallax').props.disabled, false);
+  assert.equal(control('parallaxHint'), undefined);
+  assert.match(wallpaper(), /html\[data-bdt-parallax-active\]::before\{display:none\}/);
+  assert.match(wallpaper(), /\[data-bdt-sidebar-image\]>\[data-bdt-sidebar-canvas\]/);
+  assert.equal(screen().find(node => node.props.className === 'bdt-preview-image').props.src, IMAGE_URL);
 
-  let loaded;
-  const ready = new Promise(resolve => { loaded = resolve; });
-  t.mock.method(globalThis, 'fetch', async url => url.includes('/api/daily')
-    ? Response.json({ market: 'zh-CN', imageUrl: IMAGE_URL, date: '2026-11-24' })
-    : new Response(new Blob(['image'], { type: 'image/jpeg' })));
-
-  const React = {
-    createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(c => c != null && c !== false) }),
-    useSyncExternalStore: (_, get) => get(), useState: init => [typeof init === 'function' ? init() : init, () => {}],
-    useMemo: make => make(), useRef: current => ({ current }), useId: () => 'test', useEffect() {}, useLayoutEffect() {},
-  };
-  createPlugin(React, core, { en, zh }, createAppearanceController).apply({
-    effect(fn) { const d = fn(); if (typeof d === 'function') disposers.push(d); }, on() {},
-    locale: { register() {}, bind: () => k => en[k] ?? k, subscribe: () => () => {}, getSnapshot: () => 'en' },
-    slots: { inject: (_, fn) => fn(), register: (opts, comp) => { slots.set(opts.id, comp); return () => {}; } },
-    theme: { getTheme: () => ({ preference: 'light', active: { colorScheme: 'light' } }), setTheme() {}, overrideTokens() { loaded(); return () => {}; } },
-  });
-  await ready;
-
-  const settings = slots.get('bing-daily-theme'), wallpaper = slots.get('bing-daily-theme.wallpaper');
-  const nodes = n => typeof n === 'object' ? [n, ...n.children.flatMap(nodes)] : [];
-  const screen = nodes(settings());
-  const slider = screen.find(n => n.props.id === 'bdt-parallax');
-  const hint = screen.find(n => n.props.id === 'bdt-parallaxHint');
-  assert.equal(slider.props.type, 'range');
-  assert.equal(slider.props.disabled, true);
-  assert.equal(slider.props.value, 0);
-  assert.equal(slider.props['aria-describedby'], 'bdt-parallaxHint');
-  assert.equal(screen.find(n => n.type === 'output' && n.props.htmlFor === 'bdt-parallax').children[0], en.parallaxOff);
-  assert.equal(hint.children[0], en.parallaxUnavailable);
-  assert.equal(wallpaper().children[0].includes('data-bdt-parallax-active'), false);
+  control('parallaxMode').props.onChange({ target: { value: 'sharp' } });
+  assert.equal(saved().parallaxMode, 'sharp');
+  assert.equal(control('parallax').props.disabled, false);
+  assert.equal(control('parallax').props.value, 45);
+  assert.equal(control('parallax').props.max, 100);
+  control('parallax').props.onChange({ target: { value: '0' } });
+  assert.equal(saved().parallaxStrength, 0);
+  assert.equal(control('parallax').props['aria-valuetext'], en.parallaxOff);
+  assert.doesNotMatch(wallpaper(), /data-bdt-parallax-active/);
+  assert.equal(fetch.mock.callCount(), 1, 'settings changes do not refresh the original');
 });
+
+for (const [language, filename] of [['en', 'sharp-install.md'], ['zh', 'sharp-install.zh-CN.md']]) {
+  test(`unconfigured SHARP shows the ${language} installation guide while depth remains selectable`, { timeout: 5000 }, async t => {
+    const app = await settingsApp(t, ['depth'], { language });
+    const { control, fetch, wallpaper } = app;
+    control('parallaxMode').props.onChange({ target: { value: 'sharp' } });
+    assert.equal(control('parallax').props.disabled, true);
+    assert.equal(control('parallaxMode').props['aria-describedby'], 'bdt-parallaxHint');
+    const [hint, , guide] = control('parallaxHint').children;
+    assert.equal(hint, app[language]['parallaxUnavailable.sharp']);
+    assert.match(hint, /model-runtime\/sharp/);
+    assert.equal(guide.props.href, `https://github.com/nzlov/dsh-bing-wallpaper/blob/main/docs/${filename}`);
+    assert.doesNotMatch(wallpaper(), /data-bdt-parallax-active/);
+
+    control('parallaxMode').props.onChange({ target: { value: 'depth' } });
+    assert.equal(control('parallax').props.disabled, false);
+    assert.equal(control('parallax').props.value, 45);
+    assert.equal(control('parallaxHint'), undefined);
+    assert.equal(fetch.mock.callCount(), 1);
+  });
+}

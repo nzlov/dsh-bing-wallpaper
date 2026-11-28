@@ -37,6 +37,43 @@ export function isValidDepthPayload(bytes) {
   return bytes.byteLength === DEPTH_HEADER_BYTES + width * height
 }
 
+const DEPTH_SMOOTH_SIGMA = 4.5
+const DEPTH_SMOOTH_RADIUS = Math.ceil(DEPTH_SMOOTH_SIGMA * 2.5)
+const depthKernel = Array.from({ length: 2 * DEPTH_SMOOTH_RADIUS + 1 }, (_, i) =>
+  Math.exp(-((i - DEPTH_SMOOTH_RADIUS) ** 2) / (2 * DEPTH_SMOOTH_SIGMA ** 2)))
+const depthKernelSum = depthKernel.reduce((a, b) => a + b, 0)
+const depthWeights = depthKernel.map(weight => weight / depthKernelSum)
+
+function smoothDepthPayload(raw) {
+  const width = (raw[4] << 8) | raw[5]
+  const height = (raw[6] << 8) | raw[7]
+  const input = raw.subarray(DEPTH_HEADER_BYTES)
+  const horizontal = new Float32Array(input.length)
+  const result = new Uint8Array(raw)
+  for (let y = 0; y < height; y++) {
+    const row = y * width
+    for (let x = 0; x < width; x++) {
+      let sum = 0
+      for (let k = 0; k < depthWeights.length; k++) {
+        const col = Math.min(width - 1, Math.max(0, x + k - DEPTH_SMOOTH_RADIUS))
+        sum += input[row + col] * depthWeights[k]
+      }
+      horizontal[row + x] = sum
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0
+      for (let k = 0; k < depthWeights.length; k++) {
+        const row = Math.min(height - 1, Math.max(0, y + k - DEPTH_SMOOTH_RADIUS))
+        sum += horizontal[row * width + x] * depthWeights[k]
+      }
+      result[DEPTH_HEADER_BYTES + y * width + x] = Math.round(sum)
+    }
+  }
+  return result
+}
+
 export function hashImageBytes(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
 }
@@ -62,7 +99,7 @@ export function isDepthRuntimeAvailable(resolveImpl = defaultResolveTransformers
   return Boolean(resolveDepthRuntime(resolveImpl))
 }
 
-function defaultCacheDir() {
+export function defaultCacheDir() {
   const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache')
   return path.join(base, 'dsh-bing-wallpaper')
 }
@@ -200,14 +237,12 @@ export function createDepthService({
 
   async function computeOnce(key, imageBytes) {
     const cached = await readDisk(key)
-    if (cached) {
-      if (!disposed) rememberMemory(key, cached)
-      return cached
-    }
-    const payload = await runInference(imageBytes)
+    const raw = cached ?? await runInference(imageBytes)
     if (disposed) throw new Error('Depth service disposed')
+    // Keep the existing disk format raw and smooth exactly once for a memory-cache entry.
+    const payload = smoothDepthPayload(raw)
     rememberMemory(key, payload)
-    await writeDisk(key, payload)
+    if (!cached) await writeDisk(key, raw)
     return payload
   }
 
