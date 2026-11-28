@@ -2,18 +2,11 @@ import { SparkRenderer, SplatFileType, SplatMesh } from '@sparkjsdev/spark';
 import { PerspectiveCamera, Scene, WebGLRenderer } from 'three';
 
 const SPLAT_BYTES = 32;
-const MAX_SCENE_BYTES = 64 * 1024 * 1024;
 const MAX_CAMERA_SHIFT = 0.028;
 const webglOptions = {
   alpha: true, depth: false, stencil: false, antialias: false,
   premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'low-power',
 };
-
-function isSoftwareRenderer(gl) {
-  const extension = gl.getExtension('WEBGL_debug_renderer_info');
-  const renderer = gl.getParameter(extension?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER);
-  return /swiftshader|llvmpipe|softpipe|software (?:rasterizer|renderer)|microsoft basic render/i.test(renderer);
-}
 
 function sceneIntrinsics(headers) {
   const width = Number(headers.get('x-bdt-scene-width'));
@@ -48,13 +41,13 @@ export async function createSharpParallaxRenderer({ canvas, dataUrl, signal, fet
   signal.throwIfAborted();
   const gl = canvas.getContext('webgl2', webglOptions);
   if (!gl || gl.isContextLost()) throw new Error('SHARP requires WebGL2');
-  const software = isSoftwareRenderer(gl);
   const scene = new Scene();
-  let disposed = false, mesh, renderer, spark, shaderFailed = false;
+  let disposed = false, mesh, renderer, spark, frameFence, shaderFailed = false;
 
   function dispose() {
     if (disposed) return;
     disposed = true;
+    if (frameFence) gl.deleteSync(frameFence);
     scene.clear();
     mesh?.dispose();
     spark?.dispose();
@@ -64,18 +57,18 @@ export async function createSharpParallaxRenderer({ canvas, dataUrl, signal, fet
 
   try {
     const response = await fetchImpl(dataUrl, { credentials: 'same-origin', signal });
-    if (!response.ok || Number(response.headers.get('content-length')) > MAX_SCENE_BYTES) {
+    if (!response.ok) {
       await response.body?.cancel();
       throw new Error('SHARP scene unavailable');
     }
     const intrinsics = sceneIntrinsics(response.headers);
     const fileBytes = new Uint8Array(await response.arrayBuffer());
     signal.throwIfAborted();
-    if (!fileBytes.byteLength || fileBytes.byteLength > MAX_SCENE_BYTES || fileBytes.byteLength % SPLAT_BYTES) {
+    if (!fileBytes.byteLength || fileBytes.byteLength % SPLAT_BYTES) {
       throw new Error('Invalid SHARP scene data');
     }
 
-    mesh = new SplatMesh({ fileBytes, fileType: SplatFileType.SPLAT, lod: true });
+    mesh = new SplatMesh({ fileBytes, fileType: SplatFileType.SPLAT, lod: false });
     // SHARP stores OpenCV axes. Three looks down -Z with +Y up.
     mesh.rotation.x = Math.PI;
     // Spark's worker finishes decoding independently of the fetch signal.
@@ -89,19 +82,33 @@ export async function createSharpParallaxRenderer({ canvas, dataUrl, signal, fet
     renderer.debug.onShaderError = () => { shaderFailed = true; };
     spark = new SparkRenderer({
       renderer,
-      lodSplatCount: software ? 70_000 : 300_000,
+      // SHARP's reference renderer uses a zero screen-space low-pass filter.
+      blurAmount: 0,
       onDirty: () => { if (!disposed && !signal.aborted) invalidate(); },
     });
     scene.add(mesh, spark);
     const near = Math.max(0.0001, Math.min(0.01, intrinsics.depth / 64));
     const far = Math.max(10_000, intrinsics.depth * 2048);
     const camera = new PerspectiveCamera(50, 1, near, far);
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    const device = gl.getParameter(debugInfo?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER);
     let width = 0, height = 0;
     return {
+      // Software rasterizers follow input directly to avoid spending seconds
+      // drawing an easing sequence after the pointer has stopped.
+      interpolateMotion: !/swiftshader|llvmpipe|softpipe|software (?:rasterizer|renderer)|microsoft basic render/i.test(device),
       sourceWidth: intrinsics.width,
       maxCanvasSide: Math.min(renderer.capabilities.maxTextureSize, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)),
       draw(frame) {
         if (disposed || gl.isContextLost()) throw new Error('SHARP WebGL context unavailable');
+        // Keep at most one full-scene draw queued. A slow GPU can skip
+        // intermediate pointer positions and draw the latest one when ready.
+        if (frameFence) {
+          const result = gl.clientWaitSync(frameFence, 0, 0);
+          if (result === gl.TIMEOUT_EXPIRED) return false;
+          if (result === gl.WAIT_FAILED) throw new Error('SHARP frame sync failed');
+          gl.deleteSync(frameFence);
+        }
         if (frame.pixelWidth !== width || frame.pixelHeight !== height) {
           width = frame.pixelWidth;
           height = frame.pixelHeight;
@@ -110,6 +117,9 @@ export async function createSharpParallaxRenderer({ canvas, dataUrl, signal, fet
         positionSharpCamera(camera, intrinsics, frame);
         renderer.render(scene, camera);
         if (shaderFailed) throw new Error('SHARP shader compilation failed');
+        frameFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        gl.flush();
+        return true;
       },
       dispose,
     };

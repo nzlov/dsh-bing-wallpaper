@@ -96,7 +96,7 @@ test('both locales name each filter and adjustment; settings preview keeps the o
   assert.doesNotMatch(source, /filterScope|bdt-filter-note/);
   assert.match(source, /filterOption && row\(filterLabel, h\('input',[^\n]+type: 'range', min: 0, max: filterOption\.max/);
   assert.match(source, /aria-valuetext[^\n]+filterPixels/);
-  assert.match(source, /if \(backgroundOnly\) \{[^}]+publish\(\{ settings \}\);\s+if \(weatherChanged\) void weather.sync\(settings\);\s+return;/);
+  assert.match(source, /if \(backgroundOnly\) \{[^}]+publish\(\{ settings[^}]*\}\);\s+if \(weatherChanged\) void weather.sync\(settings\);\s+return;/);
   assert.match(source, /className: 'bdt-preview-image', src: s\.url/);
   assert.doesNotMatch(source, /bdt-preview-tint|filter: look\?\.filter/);
   assert.match(source, /accent: meta\.imagePalette \|\| fallbackAccent/);

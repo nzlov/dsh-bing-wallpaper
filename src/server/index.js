@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { createBingSource, DAILY_PATH, DEPTH_PATH, IMAGE_PATH, SCENE_PATH, MARKET, RESOLUTION, isBingImageId, isBingMarket, isBingResolution } from './bing-source.js'
+import { DEFAULT_SETTINGS_PATH } from '../shared/default-settings.js'
+import { createDefaultSettingsHandler } from './default-settings.js'
 import { bootThemeInjection } from '../shared/boot-theme.js'
 import { createDepthService } from './depth-service.js'
 import { createImageAnalyzer } from './image-analysis.js'
@@ -88,7 +90,7 @@ export function createResources({ source, admit, depth, sharp, loadSharpAsset = 
         return response(request, 503, { error: 'SHARP renderer unavailable' })
       }
     }
-    const allowedKeys = kind === 'daily' ? SOURCE_QUERY : IMAGE_QUERY
+    const allowedKeys = kind === 'daily' ? SOURCE_QUERY : kind === 'scene' ? [...IMAGE_QUERY, 'v'] : IMAGE_QUERY
     if ([...url.searchParams.keys()].some(name => !allowedKeys.includes(name))
       || allowedKeys.some(name => url.searchParams.getAll(name).length > 1)) {
       return response(request, 400, { error: 'Invalid query' })
@@ -179,6 +181,10 @@ export function apply(ctx) {
       for (const [name, path] of Object.entries(RESOURCE_PATHS)) {
         disposers.push(ctx.webServer.register({ kind: 'exact', path, resource: resources[name] }))
       }
+      disposers.push(ctx.webServer.register({
+        kind: 'exact', path: DEFAULT_SETTINGS_PATH,
+        handler: createDefaultSettingsHandler(profileDir, request => ctx.connection.admit(request)),
+      }))
     } catch (error) {
       dispose()
       throw error

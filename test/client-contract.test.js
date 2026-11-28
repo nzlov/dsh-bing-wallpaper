@@ -39,7 +39,7 @@ test('wallpaper has no fixed readability scrim and dynamic-off releases every co
   const wallpaper = source.slice(source.indexOf('function Wallpaper()'), source.indexOf('function Settings()'));
   assert.doesNotMatch(wallpaper, /wallpaperShade/);
   assert.match(source, /if \(!settings\.dynamic\) for \(const key of Object\.keys\(tokens\)\) if \(key !== '--dsw-alias-bg-base'\) delete tokens\[key\]/);
-  assert.match(source, /if \(!settings\.enabled \|\| !state\.url\) \{ tokenDisposer\?\.\(\)/);
+  assert.match(source, /if \(!settings\.enabled \|\| \(!state\.url && !\(settings\.dynamic && matches\)\)\) \{\s*tokenDisposer\?\.\(\)/);
 });
 test('wallpaper applies browser-local sidebar backgrounds only while enabled with a decoded photo', async () => {
   const source = await read('src/client/client-main.js');
@@ -439,8 +439,8 @@ test('source changes cancel obsolete work and cannot reuse or mislabel another m
   assert.match(source, /api\/daily\?market=\$\{market\}/);
   assert.match(source, /meta\.market !== market/);
   assert.match(source, /if \(!alive \|\| current !== generation\)/);
-  assert.match(source, /settings\.dynamic && state\.meta\?\.market === settings\.market/);
-  assert.match(source, /state\.meta && state\.meta\.market !== settings\.market/);
+  assert.match(source, /paletteSource\?\.market === settings\.market/);
+  assert.match(source, /paletteSource && !matches/);
   assert.match(source, /s\.meta\.market === prefs\.market \? 'ready' : 'sourceFailed'/);
   assert.match(source, /core\.localDate\(\) !== lastDay \|\| state\.meta\?\.market !== settings\.market/);
 });

@@ -179,3 +179,21 @@ test('SHARP reuses the verified runtime from the former installer', async t => {
   assert.equal(reopened.available, true)
   assert.deepEqual(await reopened.load(image), scene)
 })
+
+test('SHARP loads tiled scenes above 1.5 million splats and rejects mismatched record counts', async t => {
+  const options = await fixture(t)
+  const count = 1_500_001
+  const largeHeader = Buffer.from(header)
+  const gzip = gzipSync(Buffer.alloc(count * 32), { level: 1 })
+  const service = createSharpSceneService({
+    ...options,
+    async run(_python, [, , , output]) {
+      await writeFile(output, Buffer.concat([largeHeader, gzip]))
+    },
+  })
+  t.after(() => service.dispose())
+  largeHeader.writeUInt32LE(count - 1, 28)
+  await assert.rejects(service.load(image), /invalid scene/)
+  largeHeader.writeUInt32LE(count, 28)
+  assert.deepEqual(await service.load(image), { ...metadata, bytes: gzip })
+})

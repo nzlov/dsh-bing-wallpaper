@@ -23,7 +23,7 @@ export function parallaxDataUrl(imageUrl, mode) {
   if (typeof imageUrl !== 'string' || imageUrl.length > 300) return '';
   if (!/^\/bing-daily-theme\/api\/image\?(?:market=en-US&)?(?:resolution=(?:2k|4k)&)?id=OHR\.[A-Za-z0-9][A-Za-z0-9_-]*_1920x1080\.jpg$/.test(imageUrl)) return '';
   if (!PARALLAX_MODES.includes(mode)) return '';
-  return imageUrl.replace('/api/image?', mode === 'depth' ? '/api/depth?' : '/api/scene?');
+  return imageUrl.replace('/api/image?', mode === 'depth' ? '/api/depth?' : '/api/scene?v=2&');
 }
 
 export async function decodeWallpaperImage(url, signal) {
@@ -157,11 +157,15 @@ export function mountParallaxWallpaper({
     gyroBase = undefined;
   }
 
-  function hide() {
-    resetMotion();
+  function showPhoto() {
     setActive(false);
     for (const element of document.querySelectorAll('[data-bdt-sidebar-canvas]')) element.remove();
     crops = undefined;
+  }
+
+  function hide() {
+    resetMotion();
+    showPhoto();
   }
 
   function disposeRenderer() {
@@ -241,8 +245,15 @@ export function mountParallaxWallpaper({
   }
 
   function draw() {
+    if (config.settings?.parallaxMode === 'sharp' && offset.x === 0 && offset.y === 0) {
+      if (active) showPhoto();
+      return;
+    }
     if (!layout) measure();
-    renderer.draw({ ...layout, offset, strength });
+    if (renderer.draw({ ...layout, offset, strength }) === false) {
+      schedule();
+      return;
+    }
     setActive(true);
     crops ??= measureSidebarCrops();
     for (const { context, width, height, copy } of crops) {
@@ -255,7 +266,7 @@ export function mountParallaxWallpaper({
     frame = 0;
     if (!canDraw() || !renderer) return;
     const dt = lastFrameTime ? now - lastFrameTime : 16;
-    const next = parallaxMotion(target, offset, dt);
+    const next = renderer.interpolateMotion === false ? { ...target, settled: true } : parallaxMotion(target, offset, dt);
     offset = { x: next.x, y: next.y };
     lastFrameTime = next.settled ? 0 : now;
     try { draw(); } catch { fail(); return; }
@@ -315,6 +326,12 @@ export function mountParallaxWallpaper({
     const next = { x: clamp(x), y: clamp(y) };
     if (next.x === target.x && next.y === target.y) return;
     target = next;
+    if (config.settings?.parallaxMode === 'sharp' && x === 0 && y === 0) {
+      offset = next;
+      lastFrameTime = 0;
+      if (active) showPhoto();
+      return;
+    }
     schedule();
   }
 

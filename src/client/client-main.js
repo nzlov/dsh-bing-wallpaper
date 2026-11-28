@@ -1,4 +1,5 @@
 // Bundled by scripts/build.mjs. No runtime imports except the shared React instance.
+import { DEFAULT_SETTINGS_PATH } from '../shared/default-settings.js';
 import { PREFERENCES_KEY, BOOT_CACHE_KEY, BOOT_STYLE_ID, makeBootCache } from '../shared/boot-theme.js';
 import { MARKETPLACE_THEME_CSS, SHELL_WALLPAPER_CSS, SYSTEM_TWEAKS_CSS, pluginPageCSS } from './compatibility.js';
 import { wallpaperFilters } from '../shared/wallpaper-filter.js';
@@ -46,18 +47,24 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
       ctx.effect(() => ctx.locale.register(NS, 'en', dictionaries.en));
       ctx.effect(() => ctx.locale.register(NS, 'zh', dictionaries.zh));
       const t = ctx.locale.bind(NS);
-      let settings;
-      try { settings = core.normalizeSettings(JSON.parse(localStorage.getItem(KEY) || '{}')); }
-      catch { settings = core.normalizeSettings(); }
-      let state = { settings, busy: false, issue: '', meta: null, url: '', accent: fallbackAccent, scheme: ctx.theme.getTheme().active.colorScheme, storageIssue: false };
+      function cachedPreferences() {
+        try { return localStorage.getItem(KEY); } catch { return null; }
+      }
+      let cached;
+      try { cached = JSON.parse(cachedPreferences()); } catch { /* Start from the profile default. */ }
+      let settings = core.normalizeSettings(cached);
+      let followsDefault = !cached || cached.followsDefault === true;
+      let revision = 0;
+      let state = { settings, followsDefault, defaultBusy: false, defaultNotice: '', busy: false, issue: '', meta: null, url: '', accent: fallbackAccent, scheme: ctx.theme.getTheme().active.colorScheme, storageIssue: false };
       const listeners = new Set();
       const publish = patch => { state = { ...state, ...patch }; listeners.forEach(fn => fn()); };
       const weather = createWeatherController(publish);
       const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn); };
       const useState = () => React.useSyncExternalStore(subscribe, () => state);
+      let paletteSource;
       let alive = true, tokenDisposer, controller, parallaxPrefetch;
       const appearance = createAppearanceController(ctx.theme, () => {
-        settings = { ...settings, mode: 'follow' }; save(); publish({ settings });
+        settings = { ...settings, mode: 'follow' }; save(); publish({ settings, followsDefault, defaultNotice: '' });
       }, core.scheduledScheme);
       let lastCheck = 0, lastDay = '', generation = 0, updateWindowLight;
       function discardParallaxPrefetch() {
@@ -77,26 +84,59 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         parallaxPrefetch = { dataUrl, controller, pending };
         return parallaxPrefetch;
       }
-      function save() {
+      function save(follow = false) {
+        followsDefault = follow;
+        revision++;
         let storageIssue = false;
-        try { localStorage.setItem(KEY, JSON.stringify(settings)); }
+        try { localStorage.setItem(KEY, JSON.stringify({ ...settings, followsDefault })); }
         catch { storageIssue = true; }
         if (state.storageIssue !== storageIssue) publish({ storageIssue });
+      }
+      async function profileDefault(action, startup = false) {
+        if (state.defaultBusy) return;
+        const version = revision, before = cachedPreferences();
+        const writing = action === 'save';
+        publish({ defaultBusy: true, defaultNotice: '' });
+        try {
+          const response = await fetch(DEFAULT_SETTINGS_PATH, {
+            credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
+            ...(writing && { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) }),
+          });
+          if (!response.ok) throw new Error();
+          const value = await response.json();
+          if (value !== null && typeof value?.enabled !== 'boolean') throw new Error();
+          if (!alive || version !== revision || before !== cachedPreferences()) return;
+          const next = core.normalizeSettings(value);
+          if (next.day === next.night) throw new Error();
+          if (startup) {
+            settings = next;
+            if (paletteSource) syncTokens();
+          } else update(next, false);
+          save(true);
+          publish({ settings, followsDefault, defaultNotice: writing ? 'defaultSaved' : '' });
+        } catch {
+          if (alive && version === revision) publish({ defaultNotice: writing ? 'defaultSaveFailed' : 'defaultLoadFailed' });
+        } finally {
+          if (alive) publish({ defaultBusy: false });
+        }
       }
       function restoreTheme() { appearance.restore(); }
       function syncMode() { appearance.sync(settings); }
       function syncTokens() {
-        if (!settings.enabled || !settings.dynamic || (state.meta && state.meta.market !== settings.market) || (state.meta && (state.meta.resolution || '1080p') !== settings.resolution)) {
+        const matches = paletteSource?.market === settings.market && (paletteSource.resolution || '1080p') === settings.resolution;
+        if (!settings.enabled || !settings.dynamic || (paletteSource && !matches)) {
           try { localStorage.removeItem(BOOT_CACHE_KEY); } catch { /* Best-effort startup cache only. */ }
         }
-        if (!settings.enabled || !state.url) { tokenDisposer?.(); tokenDisposer = undefined; return; }
+        if (!settings.enabled || (!state.url && !(settings.dynamic && matches))) {
+          tokenDisposer?.(); tokenDisposer = undefined; return;
+        }
         const tokens = core.makeTokens(settings.dynamic ? state.accent : [112, 112, 112], settings.strength, settings.dynamic ? settings.paletteMode : 'monochrome', settings.dynamic ? settings.textColorMode : 'theme', settings.dynamic ? { pureBlackDark: settings.pureBlackDark, systemTweaks: settings.systemTweaks } : {});
         if (!settings.dynamic) for (const key of Object.keys(tokens)) if (key !== '--dsw-alias-bg-base') delete tokens[key];
         const previous = tokenDisposer;
         tokenDisposer = ctx.theme.overrideTokens(SOURCE, tokens);
         previous?.();
-        if (settings.dynamic && state.meta?.market === settings.market && (state.meta?.resolution || '1080p') === settings.resolution) {
-          try { localStorage.setItem(BOOT_CACHE_KEY, JSON.stringify(makeBootCache(settings, tokens, state.meta?.imageUrl))); }
+        if (settings.dynamic && matches) {
+          try { localStorage.setItem(BOOT_CACHE_KEY, JSON.stringify(makeBootCache(settings, tokens, paletteSource.imageUrl, state.accent))); }
           catch { /* Palette persistence must not break wallpaper or theme application. */ }
         }
       }
@@ -109,7 +149,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
         const weatherChanged = next.enabled !== settings.enabled || JSON.stringify(next.weather) !== JSON.stringify(settings.weather);
         // Local background controls can update without reloading the photo or theme.
         if (backgroundOnly) {
-          settings = next; if (persist) save(); publish({ settings });
+          settings = next; if (persist) save(); publish({ settings, followsDefault, defaultNotice: '' });
           if (weatherChanged) void weather.sync(settings);
           return;
         }
@@ -122,7 +162,7 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           publish({ busy: false });
         }
         if (next.mode !== settings.mode || !next.enabled) restoreTheme();
-        settings = next; if (persist) save(); publish({ settings, issue: '' }); syncTokens(); syncMode();
+        settings = next; if (persist) save(); publish({ settings, followsDefault, defaultNotice: '', issue: '' }); syncTokens(); syncMode();
         if (weatherChanged) void weather.sync(settings);
         if (!settings.enabled) { generation++; controller?.abort(); discardParallaxPrefetch(); publish({ busy: false }); }
         else if (!wasEnabled || sourceChanged) void refresh();
@@ -146,15 +186,17 @@ export function createPlugin(React, core, dictionaries, createAppearanceControll
           const url = meta.imageUrl;
           const photoPending = url === state.url ? state.photo : decodeWallpaperImage(url, signal);
           if (url !== state.url) preparedParallax = prefetchParallax(meta, url);
+          paletteSource = meta;
+          publish({ accent: meta.imagePalette || fallbackAccent });
+          if (settings.dynamic) syncTokens();
           const photo = await photoPending;
           if (!alive || current !== generation) return;
           publish({
             meta, url, photo, issue: meta.stale ? 'stale' : '',
-            accent: meta.imagePalette || fallbackAccent,
             imageWidth: meta.imageWidth || photo.naturalWidth,
             imageHeight: meta.imageHeight || photo.naturalHeight,
           });
-          syncTokens();
+          if (!settings.dynamic) syncTokens();
           lastDay = core.localDate();
         } catch (error) {
           if (preparedParallax && parallaxPrefetch === preparedParallax) discardParallaxPrefetch();
@@ -446,6 +488,12 @@ ${PALETTE_PREVIEW_CSS}
               h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
                 h('path', { d: 'M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.36 6.36L3 16M8 16H3v5' })))),
           h('span', { className: 'bdt-photo-status', role: 'status', 'aria-live': 'polite' }, !prefs.enabled ? t('paused') : s.busy ? t('loading') : s.issue ? t(s.issue) : t(s.meta ? (s.meta.resolution || '1080p') !== prefs.resolution ? 'sourceFailed' : s.meta.market === prefs.market ? 'ready' : 'sourceFailed' : 'waiting')),
+          h('div', { className: 'bdt-row' },
+            h('span', null, t(s.followsDefault ? 'followingDefault' : 'deviceSettings')),
+            h('div', { className: 'bdt-control' },
+              h('button', { type: 'button', disabled: s.defaultBusy, onClick: () => profileDefault('save') }, t('saveDefault')),
+              h('button', { type: 'button', disabled: s.defaultBusy, onClick: () => profileDefault('load') }, t('useDefault')))),
+          s.defaultNotice && h('p', { role: 'status' }, t(s.defaultNotice)),
           group('wallpaper',
             row('enabled', checkbox('enabled')),
             row('market', h('select', { id: 'bdt-market', value: prefs.market, onChange: e => update({ market: e.target.value }), className: 'bdt-wallpaper-select' }, ...['zh-CN', 'en-US'].map(market => h('option', { key: market, value: market }, t(`market.${market}`))))),
@@ -511,21 +559,44 @@ ${PALETTE_PREVIEW_CSS}
         const timer = setInterval(tick, 60000);
         const wake = () => {
           if (document.visibilityState !== 'visible') return;
+          if (followsDefault) void profileDefault('load');
           tick();
           void weather.sync(settings);
         };
-        const online = () => { lastCheck = 0; tick(); };
+        const online = () => { if (followsDefault) void profileDefault('load'); lastCheck = 0; tick(); };
         const storage = event => {
           if (event.key !== KEY) return;
           try {
             // A drag can queue many cross-window events. Ignore superseded
             // values and never echo a received value back into localStorage.
             if (event.newValue !== localStorage.getItem(KEY)) return;
-            update(core.normalizeSettings(JSON.parse(event.newValue || '{}')), false);
+            const record = JSON.parse(event.newValue);
+            const follow = !record || record.followsDefault === true;
+            revision++;
+            if (follow !== followsDefault) {
+              followsDefault = follow;
+              publish({ followsDefault, defaultNotice: '' });
+            }
+            update(core.normalizeSettings(record), false);
           } catch { /* Ignore invalid third-party storage writes. */ }
         };
         document.addEventListener('visibilitychange', wake); window.addEventListener('online', online); window.addEventListener('storage', storage);
-        syncMode(); void refresh(); void weather.sync(settings);
+        // HTTP cache can be disabled while the last wallpaper palette is still available.
+        try {
+          const boot = JSON.parse(localStorage.getItem(BOOT_CACHE_KEY));
+          if (settings.enabled && settings.dynamic && boot?.version === 3 && boot.accent
+              && boot.market === settings.market && boot.resolution === settings.resolution) {
+            paletteSource = boot;
+            publish({ accent: boot.accent });
+            syncTokens();
+          }
+        } catch { /* Start with daily metadata if storage is unavailable. */ }
+        const start = () => {
+          if (!alive) return;
+          syncMode(); void refresh(); void weather.sync(settings);
+        };
+        if (followsDefault) void profileDefault('load', true).then(start);
+        else start();
         return () => {
           weather.dispose(); alive = false; generation++; clearInterval(timer); controller?.abort(); discardParallaxPrefetch();
           document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', online); window.removeEventListener('storage', storage);

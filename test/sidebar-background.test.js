@@ -281,6 +281,7 @@ test('sidebar settings render labelled controls, persist changes and leave wallp
   };
   createPlugin(React, core, { en, zh }, createAppearanceController).apply(ctx);
   await applied;
+  await new Promise(setImmediate); // Allow the decoded photo to mount after theme application.
   const settings = slots.get('bing-daily-theme'), wallpaper = slots.get('bing-daily-theme.wallpaper');
   const nodes = node => typeof node === 'object' ? [node, ...node.children.flatMap(nodes)] : [];
   const find = id => nodes(settings()).find(node => node.props.id === id);

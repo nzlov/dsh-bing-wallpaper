@@ -8,8 +8,6 @@ import { defaultCacheDir, hashImageBytes } from './depth-service.js'
 
 const SCRIPT = fileURLToPath(new URL('./render-sharp.py', import.meta.url))
 const SCENE_HEADER_BYTES = 32
-const MAX_SPLATS = 1_500_000
-const MAX_SCENE_FILE_BYTES = SCENE_HEADER_BYTES + 32 * MAX_SPLATS + 64 * 1024
 const CHECKPOINT_NAME = 'sharp_2572gikvuh.pt'
 
 function fileIdentity(file, mode) {
@@ -70,7 +68,7 @@ async function readScene(file) {
   try {
     handle = await open(file)
     const info = await handle.stat()
-    if (!info.isFile() || info.size < SCENE_HEADER_BYTES + 20 || info.size > MAX_SCENE_FILE_BYTES) return null
+    if (!info.isFile() || info.size < SCENE_HEADER_BYTES + 20) return null
     const bytes = await handle.readFile()
     if (bytes.byteLength !== info.size || bytes.toString('ascii', 0, 4) !== 'BDS1') return null
     const width = bytes.readUInt32LE(4)
@@ -80,7 +78,7 @@ async function readScene(file) {
     const pointCount = bytes.readUInt32LE(28)
     if (width < 1 || height < 1 || width > 16_384 || height > 16_384
       || !Number.isFinite(focalPx) || focalPx <= 0 || !Number.isFinite(nearDepth) || nearDepth <= 0
-      || pointCount < 1 || pointCount > MAX_SPLATS || bytes.readUInt32LE(bytes.length - 4) !== pointCount * 32) return null
+      || pointCount < 1 || bytes.readUInt32LE(bytes.length - 4) !== (pointCount * 32) % 2 ** 32) return null
     const gzip = bytes.subarray(SCENE_HEADER_BYTES)
     if (gzip[0] !== 0x1f || gzip[1] !== 0x8b || gzip[2] !== 8) return null
     return { bytes: gzip, width, height, focalPx, nearDepth }
@@ -105,7 +103,7 @@ export function createSharpSceneService({
   const pythonIdentity = fileIdentity(python, constants.X_OK)
   const checkpointIdentity = fileIdentity(checkpoint, constants.R_OK)
   const configured = Boolean(pythonIdentity && checkpointIdentity)
-  const cacheVersion = JSON.stringify(['sharp-scene-v1', pythonIdentity, checkpointIdentity])
+  const cacheVersion = JSON.stringify(['sharp-tiled-scene-v2', pythonIdentity, checkpointIdentity])
   const sceneDir = path.join(cacheDir, 'scenes')
   const pending = new Map()
   const lifecycle = new AbortController()

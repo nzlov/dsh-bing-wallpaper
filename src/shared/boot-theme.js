@@ -5,7 +5,7 @@ export const PREFERENCES_KEY = 'dsh.bing-daily-theme.preferences.v1';
 export const BOOT_CACHE_KEY = 'dsh.bing-daily-theme.boot.v1';
 export const BOOT_STYLE_ID = 'bdt-boot-theme';
 
-export function makeBootCache(settings, tokens, imageUrl) {
+export function makeBootCache(settings, tokens, imageUrl, accent) {
   if (!settings.enabled || !settings.dynamic) return null;
   const keys = {
     background: '--dsw-alias-bg-layer-1', primary: '--dsw-alias-label-primary',
@@ -16,7 +16,7 @@ export function makeBootCache(settings, tokens, imageUrl) {
   for (const scheme of ['light', 'dark']) {
     colors[scheme] = Object.fromEntries(Object.entries(keys).map(([role, key]) => [role, tokens[key][scheme]]));
   }
-  return { version: 3, market: settings.market || 'zh-CN', resolution: settings.resolution || '1080p', paletteMode: settings.paletteMode, textColorMode: settings.textColorMode || 'theme', pureBlackDark: Boolean(settings.pureBlackDark), strength: settings.strength, colors, imageUrl };
+  return { version: 3, market: settings.market || 'zh-CN', resolution: settings.resolution || '1080p', paletteMode: settings.paletteMode, textColorMode: settings.textColorMode || 'theme', pureBlackDark: Boolean(settings.pureBlackDark), strength: settings.strength, colors, imageUrl, accent };
 }
 
 // This pure function is also embedded verbatim in the Host's early script.

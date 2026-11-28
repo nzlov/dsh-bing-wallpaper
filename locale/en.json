@@ -1,9 +1,16 @@
 {
   "meta": {
     "title": "Bing daily wallpaper",
-    "description": "Daily Bing wallpaper with image-derived colours, ten HCT styles, visibility up to 100%, and automatic light/dark appearance. Open Settings → Bing daily wallpaper. Offers Bing China and international (US) sources, keeps the last image when updates fail, and offers system, schedule and fixed appearance modes. Browser-local controls; appearance changes use DSH’s shared theme preference. Images remain subject to Bing and photographer rights."
+    "description": "Daily Bing wallpaper with image-derived colours, ten HCT styles, visibility up to 100%, and automatic light/dark appearance. Open Settings → Bing daily wallpaper. Offers Bing China and international (US) sources, keeps the last image when updates fail, and offers system, schedule and fixed appearance modes. Profile defaults and per-device controls; appearance changes use DSH’s shared theme preference. Images remain subject to Bing and photographer rights."
   },
   "title": "Bing daily wallpaper",
+  "followingDefault": "Following profile default",
+  "deviceSettings": "Custom settings for this device",
+  "saveDefault": "Save as default",
+  "useDefault": "Use default settings",
+  "defaultSaved": "Saved as the default for this profile.",
+  "defaultSaveFailed": "Could not save the profile default. Try again.",
+  "defaultLoadFailed": "Could not load the profile default. Current settings are still active.",
   "settingsGroup.wallpaper": "Wallpaper",
   "settingsGroup.appearance": "Light and dark appearance",
   "settingsGroup.background": "Main background",

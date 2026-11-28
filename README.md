@@ -2,26 +2,19 @@
 
 [简体中文](README.zh-CN.md) · English
 
-Daily Bing wallpapers, image-derived theme colours, and automatic light/dark appearance for DSH Web. A standalone plugin with no changes to DSH itself.
+Daily Bing wallpapers, image-derived theme colours, and automatic light/dark appearance for DSH Web.
 
 ![Bing daily wallpaper settings in DSH Web, showing the wallpaper preview, source selection, and image-derived colour styles (Chinese UI)](<assets/settings-preview.png>)
 
 ## Features
 
-- China and international (US) Bing sources, with selectable 1080p, 2K (2560×1440) and 4K UHD (3840×2160) resolutions, separate caches and no automatic cross-source fallback.
-- Ten colour styles: M3 Content, M3 Tonal Spot, M3 Fruit Salad, M3 Rainbow, M3 Monochrome, Vibrant, Faithful, Soft, Dysfunctional, and Muted.
-- M3 styles align with Noctalia’s `112×112` Triangle downsampling and deterministic Matugen-order quantization/scoring; the five custom styles use `112×112` Box downsampling and cluster multiple image colours by style.
-- Full DSH UI token mapping following Noctalia’s Qt6CT/GTK/Kitty/Helix/btop role mappings (surfaces, controls, business/status accents, diffs, charts, illustrations, onboarding gradients, JSON tree, and Shiki syntax highlighting) without secondary surface mixing.
-- Configurable **Text colouring** (**Theme**: wallpaper-tinted text and pure Noctalia palette roles; **High contrast**: neutral high-contrast text, Material-harmonized semantic/diff/syntax hues, and WCAG contrast enforcement), **Pure black dark mode** (Noctalia `applyPureBlackDark` OLED surface ramp), and opt-in **System tweaks** (masks, toolbar overlays, shared `label-on-color`, macOS vibrancy washes, and default-blue `dsh-quick-prompts` chips).
-- Clickable palette cards show light and dark previews separated by a diagonal line.
-- Linear wallpaper visibility from 10% to 100%, without a fixed reading overlay.
-- Optional blur, frosted glass (blur with a mist layer), blue tint, grayscale, and dimming filters, each with its own strength. Filters update the background live; the settings preview and theme extraction use the original image.
-- Optional depth-map and SHARP 3D scene parallax. The server generates and caches model data, and the browser renders the same frame for the main wallpaper and wallpaper-backed sidebars. Both modes use the same `0–100%` intensity range, with `0` off. SHARP uses the selected wallpaper’s pixel density and preserves its framing at rest. The wallpaper respects reduced motion.
-- Main pages, sidebars and the startup screen use dedicated wallpaper filter layers over a solid-colour fallback. Page content, document images and charts are not filtered.
-- Independent left/right sidebar backgrounds: wallpaper or solid theme colour, wallpaper visibility and filters that follow the main background or can be customized, and an option to match the toolbar background. Sidebar settings start collapsed when visibility follows the main background. Wallpaper shares viewport coordinates with the centre through resizing, splits and drawer animations. Both solid mode and the optional theme-colour overlay use the sidebar colour shown in the palette cards; the overlay remains independent of wallpaper visibility. Desktop and mobile share the same settings.
-- Scheduled, system, follow-DSH, or fixed light/dark appearance. The default schedule is 07:00–19:00 in the browser’s local time zone.
-- Image title, date, source, and copyright overlaid at the bottom of the photo; refresh icon in the top-right corner.
-- Automatic update checks, keeping the previous image on failure; Chinese and English UI.
+- Daily Bing wallpapers from China or the US in 1080p, 2K, or 4K. Wallpapers refresh automatically or on demand and include the photo title, date, and credits.
+- Wallpaper colours carry through to the interface, syntax highlighting, and diffs. Choose from ten palette styles with light and dark previews, high-contrast text, and a pure black dark mode.
+- Light and dark appearance can follow the system, DSH, or a schedule, or stay fixed.
+- Adjust wallpaper visibility and apply blur, frosted glass, blue tint, grayscale, or dimming. Each sidebar can use the wallpaper or a solid theme colour, with its own visibility, filter, and tint.
+- Depth-map and SHARP 3D parallax work across the main wallpaper and sidebars, with adjustable strength and support for reduced motion.
+- Weather scenes can follow local conditions or be selected manually, with sunlight, moonlight, clouds, fog, rain, snow, and lightning.
+- Share default settings across devices or customise each device separately. The interface is available in Chinese and English.
 
 ## Installation
 
@@ -62,11 +55,9 @@ The browser loads the depth map or SHARP scene for the current wallpaper and ren
 
 In **Settings → Bing daily wallpaper**, open **Weather selection**. Choose **Off**, **Follow location**, or a scene such as **Cloudy** or **Heavy rain**. Selecting a scene applies it immediately. Follow location lets you enter a city or coordinates, or use your current location. Select a provider and click **Apply and check weather** to see the resolved location and condition.
 
-One Three.js renderer draws every weather effect. Clouds and fog drift with the wind. An `InstancedMesh` draws the rain or snow in a batch. Light, moderate and heavy precipitation use different particle densities. Each intensity includes a mix of sizes, with larger drops and flakes falling faster. Raindrops splash on the glass, refract the current wallpaper and slide down, leaving a fading trail. Snowflakes briefly stick and melt, and frost forms along the edges. Rain can produce forked lightning, with a higher chance in heavier rain.
+Weather appears across the main wallpaper and wallpaper-backed sidebars. Raindrops splash and slide down the glass, and snowflakes settle and melt. Reduced motion keeps the scene still.
 
-The main wallpaper and wallpaper-backed sidebars share the rendered frame. Wallpaper visibility adjusts only the photo beneath the weather. Settings show the original photo. Weather requires WebGL2. If the browser cannot create a context, the wallpaper remains visible. With hardware acceleration, animated weather adjusts its resolution and frame rate to measured drawing cost. Recognized software renderers use a smaller drawing buffer and fewer frames per second. Rendering pauses in background tabs, and reduced motion freezes the scene.
-
-Set **Facing direction** to East, West, South or North (South by default). The window follows the active DSH appearance. Clear skies use the same fan of light shafts in both modes. The warm rays turn cooler, dimmer and slower in dark mode, and moonlight enters along a lower arc. The position depends on the computer’s local time and the window direction. In scheduled mode, the moonlight travels west from the configured start of dark mode until light mode begins. Passing clouds can shade either light source.
+Set **Facing direction** to East, West, South, or North. Light mode shows sunlight and dark mode shows moonlight, with lighting that follows local time and the selected direction.
 
 In Follow location mode, set **Update interval (minutes)** and click **Apply and check weather**. The browser sends the location directly to the selected provider and refreshes at that interval after a successful lookup. The default is 30 minutes and the minimum is 1 minute. Built-in providers are [Open-Meteo](https://open-meteo.com/) and [wttr.in](https://github.com/chubin/wttr.in). Open-Meteo uses its geocoding service for city names. Only Follow location makes weather requests. The reported wind speed and direction determine how rain, snow, clouds, fog and water on the glass move relative to the selected facing direction. Fixed scenes use baseline motion. A custom response with speed alone keeps the default leftward wind.
 
@@ -76,7 +67,8 @@ For a custom provider, enter an HTTPS endpoint that supports browser cross-origi
 
 - No API key or CDN is required. Wallpaper requests go only to fixed Bing HTTPS endpoints; chat content and browser credentials are not forwarded to Bing.
 - The server caches original Bing images in memory and checks for new images hourly. Refreshing may reuse the previous image. The two regions may show the same photo.
-- Plugin controls are saved in the current browser. DSH’s appearance preference is shared across the profile; use scheduling in one primary browser to avoid competing schedules.
+- New devices load the current profile’s default settings. Select **Save as default** to store the current settings (including weather location and custom endpoint) on the server. Subsequent edits apply only to the current browser. Select **Use default settings** to replace local settings and follow the profile again. Existing browser preferences are preserved on upgrade.
+- DSH’s appearance preference is shared across the profile; use scheduling in one primary browser to avoid competing schedules.
 
 ## License and credits
 

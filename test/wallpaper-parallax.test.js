@@ -45,7 +45,7 @@ test('only canonical wallpaper paths can request the model output for either mod
   assert.equal(parallaxDataUrl(IMAGE_URL, 'depth'), DEPTH_URL);
   assert.equal(
     parallaxDataUrl('/bing-daily-theme/api/image?market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg', 'sharp'),
-    '/bing-daily-theme/api/scene?market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg',
+    '/bing-daily-theme/api/scene?v=2&market=en-US&resolution=4k&id=OHR.Test_EN-US123_1920x1080.jpg',
   );
   for (const invalid of ['https://example.org' + IMAGE_URL, IMAGE_URL + '&q=1', IMAGE_URL + '#fragment', '/api/image?id=x', null]) {
     assert.equal(parallaxDataUrl(invalid, 'depth'), '');
@@ -356,11 +356,12 @@ test('WebGL2 compiles GLSL 3 with a single-channel depth texture and chooses the
 test('SHARP keeps source pixel density across wallpaper resolutions and viewport crops', async t => {
   for (const width of [1920, 2560, 3840]) {
     const h = createParallaxHarness({ width: 960, height: 540 });
-    const controller = mount(h, core.DEFAULTS, async () => ({
+    const controller = mount(h, { ...core.DEFAULTS, parallaxMode: 'sharp' }, async () => ({
       sourceWidth: width, maxCanvasSide: 8192, draw() {}, dispose() {},
     }));
     t.after(() => controller.dispose());
     controller.update({ imageWidth: width, imageHeight: width * 9 / 16 });
+    h.listeners.get('window:pointermove')({ clientX: 900, clientY: 270 });
     await startRenderer(h);
     const canvas = h.createdCanvases[0];
     assert.deepEqual([canvas.width, canvas.height], [width, width * 9 / 16]);
@@ -369,6 +370,64 @@ test('SHARP keeps source pixel density across wallpaper resolutions and viewport
     h.flushFrames();
     assert.deepEqual([canvas.width, canvas.height], [width / 2, width * 9 / 16]);
   }
+});
+
+test('SHARP shows the photograph at center and keeps the 3D view while resting off-center', async t => {
+  const h = createParallaxHarness();
+  let starts = 0, draws = 0;
+  const controller = mount(h, { ...core.DEFAULTS, parallaxMode: 'sharp', parallaxStrength: 1 }, async () => {
+    starts++;
+    return { draw() { draws++; }, dispose() {} };
+  });
+  t.after(() => controller.dispose());
+  await startRenderer(h);
+  const canvas = h.createdCanvases[0];
+  assert.equal(draws, 0);
+  assert.equal(canvas.style.display, 'none');
+  for (let cycle = 0; cycle < 2; cycle++) {
+    h.listeners.get('window:pointermove')({ clientX: 1100, clientY: 200 });
+    h.flushFrames();
+    assert.equal(canvas.style.display, 'block');
+    assert.equal(h.leftPhoto.children.length, 1);
+    assert.equal(h.frames.size, 0);
+    if (cycle === 0) h.listeners.get('window:blur')();
+    else h.listeners.get('window:pointermove')({ clientX: h.window.innerWidth / 2, clientY: h.window.innerHeight / 2 });
+    assert.equal(canvas.style.display, 'none');
+    assert.equal(h.leftPhoto.children.length, 0);
+    assert.equal(h.attrs.has('data-bdt-parallax-active'), false);
+  }
+  assert.equal(starts, 1);
+  assert.ok(draws > 0);
+});
+
+test('a busy SHARP software renderer retries with the latest pointer and publishes only completed draws', async t => {
+  const h = createParallaxHarness({ width: 800, height: 600 });
+  const offsets = [];
+  let ready = false;
+  const controller = mount(h, { ...core.DEFAULTS, parallaxMode: 'sharp' }, async () => ({
+    interpolateMotion: false,
+    draw({ offset }) { offsets.push(offset.x); return ready; },
+    dispose() {},
+  }));
+  t.after(() => controller.dispose());
+  await startRenderer(h);
+  const move = x => h.listeners.get('window:pointermove')({ clientX: x, clientY: 300 });
+  move(500);
+  h.flushFrames(1);
+  assert.equal(h.getBlits(), 0);
+  move(700);
+  ready = true;
+  h.flushFrames();
+  assert.deepEqual(offsets, [0.25, 0.75]);
+  assert.equal(h.getBlits(), 1);
+  ready = false;
+  move(600);
+  h.flushFrames(1);
+  move(400);
+  h.flushFrames();
+  assert.equal(h.getBlits(), 1);
+  assert.equal(h.leftPhoto.children.length, 0);
+  assert.equal(h.frames.size, 0);
 });
 
 test('the common canvas starts once and suspends drawing in background tabs or reduced motion', async t => {
@@ -494,7 +553,7 @@ async function settingsApp(t, parallaxModes, { photoPending, depthPending, langu
     slots: { inject: (_, register) => register(), register(options, component) { slots.set(options.id, component); return () => {}; } },
     theme: { getTheme: () => ({ active: { colorScheme: 'light' } }), overrideTokens() { resolveTheme(); return () => {}; } },
   });
-  if (!photoPending) await themeReady;
+  if (!photoPending) { await themeReady; await flush(); }
   const screen = () => nodes(slots.get('bing-daily-theme')());
   return {
     en, zh, fetch, themeReady, screen, saved: () => JSON.parse(storage.get(PREFERENCES_KEY)),
@@ -513,8 +572,9 @@ test('photo and depth start concurrently and a pending or failed depth request p
   assert.equal(fetch.mock.calls[1].arguments[0], DEPTH_URL);
   assert.equal(wallpaper(), undefined);
 
+  await themeReady; // Theme is visible while both downloads are still pending.
   resolvePhoto();
-  await themeReady;
+  await flush();
   const first = wallpaper();
   assert.ok(first.includes(IMAGE_URL));
 

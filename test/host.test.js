@@ -406,7 +406,7 @@ test('apply uses one owned effect, unregisters all routes and aborts both market
   }
   apply(ctx)
   assert.equal(effects, 1)
-  assert.deepEqual([...registered.keys()], [DAILY_PATH, IMAGE_PATH, DEPTH_PATH, SCENE_PATH, SHARP_ASSET_PATH])
+  assert.deepEqual([...registered.keys()], [DAILY_PATH, IMAGE_PATH, DEPTH_PATH, SCENE_PATH, SHARP_ASSET_PATH, '/bing-daily-theme/api/default-settings'])
   const results = MARKETS.map(market => registered.get(DAILY_PATH).resource(
     request(`${DAILY_PATH}?market=${market}`, { headers: { host: '127.0.0.1:3001' } }),
   ))

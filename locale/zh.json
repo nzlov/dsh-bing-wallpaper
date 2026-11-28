@@ -1,9 +1,16 @@
 {
   "meta": {
     "title": "Bing 每日壁纸",
-    "description": "每天更新 Bing 壁纸，从图片提取主题色，提供十种 HCT 风格，背景可见度可调至 100%，支持按时间、跟随系统或固定明暗模式。入口：设置 → Bing 每日壁纸。支持国内（中国）及国际（美国）Bing 壁纸来源，更新失败保留上一张。插件控制项保存在当前浏览器，明暗切换使用 DSH profile 共享的外观偏好。图片版权归 Bing 及原摄影作者所有。"
+    "description": "每天更新 Bing 壁纸，从图片提取主题色，提供十种 HCT 风格，背景可见度可调至 100%，支持按时间、跟随系统或固定明暗模式。入口：设置 → Bing 每日壁纸。支持国内（中国）及国际（美国）Bing 壁纸来源，更新失败保留上一张。插件支持跨设备默认配置和设备个性化设置，明暗切换使用 DSH profile 共享的外观偏好。图片版权归 Bing 及原摄影作者所有。"
   },
   "title": "Bing 每日壁纸",
+  "followingDefault": "跟随默认配置",
+  "deviceSettings": "本设备个性化配置",
+  "saveDefault": "保存为默认",
+  "useDefault": "使用默认配置",
+  "defaultSaved": "已保存为当前 profile 的默认配置。",
+  "defaultSaveFailed": "默认配置保存失败，可重试。",
+  "defaultLoadFailed": "默认配置读取失败，继续使用当前配置。",
   "settingsGroup.wallpaper": "壁纸",
   "settingsGroup.appearance": "明暗外观",
   "settingsGroup.background": "主背景",
